@@ -6,21 +6,23 @@ I've created comprehensive interview preparation materials covering all the majo
 
 1. **[Java Fundamentals](./java-fundamentals.md)** - Core Java concepts, collections, multithreading, memory management, JVM, garbage collection, Java 8+ features
 
-2. **[Spring & Spring Boot](./spring-boot.md)** - Spring Core, dependency injection, Spring Boot, annotations, MVC, REST, Spring Data JPA, Security, AOP
+2. **[Java Multithreading & Concurrency](./java-multithreading.md)** - Deep dive into threads, synchronization, Java Memory Model, concurrent collections, executors, locks, atomic operations, Fork/Join, CompletableFuture, best practices
 
-3. **[Microservices Patterns](./microservices-patterns.md)** - Microservices architecture, communication patterns, Saga, CQRS, Event Sourcing, API Gateway, Circuit Breaker
+3. **[Spring & Spring Boot](./spring-boot.md)** - Spring Core, dependency injection, Spring Boot, annotations, MVC, REST, Spring Data JPA, Security, AOP
 
-4. **[System Design](./system-design.md)** - Scalability, CAP theorem, load balancing, caching, database sharding, real-world system designs
+4. **[Microservices Patterns](./microservices-patterns.md)** - Microservices architecture, communication patterns, Saga, CQRS, Event Sourcing, API Gateway, Circuit Breaker
 
-5. **[Distributed Systems & Architecture](./distributed-systems-architecture.md)** - Distributed computing, consistency models, consensus algorithms, fault tolerance, architectural principles
+5. **[System Design](./system-design.md)** - Scalability, CAP theorem, load balancing, caching, database sharding, real-world system designs
 
-6. **[Docker & Kubernetes](./docker-kubernetes.md)** - Containerization, Docker, Kubernetes, orchestration, deployments, monitoring
+6. **[Distributed Systems & Architecture](./distributed-systems-architecture.md)** - Distributed computing, consistency models, consensus algorithms, fault tolerance, architectural principles
 
-7. **[Design Patterns & SOLID Principles](./design-patterns-solid.md)** - SOLID principles, creational/structural/behavioral patterns, enterprise patterns
+7. **[Docker & Kubernetes](./docker-kubernetes.md)** - Containerization, Docker, Kubernetes, orchestration, deployments, monitoring
 
-8. **[Database & Caching](./database-caching.md)** - SQL/NoSQL, query optimization, transactions, indexing, caching strategies, Redis
+8. **[Design Patterns & SOLID Principles](./design-patterns-solid.md)** - SOLID principles, creational/structural/behavioral patterns, enterprise patterns
 
-9. **[Messaging & Event-Driven Architecture](./messaging-event-driven.md)** - Message queues, Kafka, RabbitMQ, event-driven architecture, delivery guarantees
+9. **[Database & Caching](./database-caching.md)** - SQL/NoSQL, query optimization, transactions, indexing, caching strategies, Redis
+
+10. **[Messaging & Event-Driven Architecture](./messaging-event-driven.md)** - Message queues, Kafka, RabbitMQ, event-driven architecture, delivery guarantees
 
 ## 📖 What Each File Contains
 
