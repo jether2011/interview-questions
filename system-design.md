@@ -3,476 +3,1098 @@
 ## Table of Contents
 1. [System Design Fundamentals](#system-design-fundamentals)
 2. [Scalability Concepts](#scalability-concepts)
-3. [CAP Theorem & Distributed Systems](#cap-theorem--distributed-systems)
+3. [CAP Theorem & Consistency](#cap-theorem--consistency)
 4. [Load Balancing](#load-balancing)
 5. [Caching Strategies](#caching-strategies)
 6. [Database Design & Sharding](#database-design--sharding)
-7. [Message Queues & Streaming](#message-queues--streaming)
-8. [Common System Design Problems](#common-system-design-problems)
-9. [Real-World Architecture Examples](#real-world-architecture-examples)
+7. [Content Delivery Networks](#content-delivery-networks)
+8. [Message Queues & Async Processing](#message-queues--async-processing)
+9. [Common System Design Problems](#common-system-design-problems)
+10. [Estimation & Capacity Planning](#estimation--capacity-planning)
+
+---
 
 ## System Design Fundamentals
 
 ### Q1: What are the key principles of system design?
 **Answer:**
-1. **Reliability**: System continues to work correctly even when things fail
-2. **Scalability**: Ability to handle increased load gracefully
-3. **Availability**: Operational time, usually measured in 9s (99.9% = three nines)
-4. **Maintainability**: Easy to operate, understand, and modify
-5. **Performance**: Response time and throughput
-6. **Security**: Protecting data and system from unauthorized access
+
+| Principle | Description | Metrics |
+|-----------|-------------|---------|
+| **Reliability** | System works correctly even when faults occur | MTBF, MTTR |
+| **Availability** | System is operational when needed | Uptime % (99.9%, 99.99%) |
+| **Scalability** | Handle increased load gracefully | QPS, response time under load |
+| **Performance** | Fast response times, high throughput | Latency (p50, p95, p99), throughput |
+| **Maintainability** | Easy to operate, debug, and modify | Deployment frequency, incident resolution time |
+| **Security** | Protect data and systems | Compliance, breach incidents |
+
+**Availability SLA Examples:**
+
+| SLA | Downtime/Year | Downtime/Month | Downtime/Week |
+|-----|---------------|----------------|---------------|
+| 99% (two 9s) | 3.65 days | 7.31 hours | 1.68 hours |
+| 99.9% (three 9s) | 8.76 hours | 43.83 min | 10.08 min |
+| 99.99% (four 9s) | 52.60 min | 4.38 min | 1.01 min |
+| 99.999% (five 9s) | 5.26 min | 26.30 sec | 6.05 sec |
 
 ### Q2: How to approach a system design interview?
 **Answer:**
-**Step-by-step approach:**
-1. **Requirements Gathering** (5-10 mins)
-   - Functional requirements
-   - Non-functional requirements
-   - Scale and constraints
-   
-2. **Capacity Estimation** (5 mins)
-   - Traffic estimates
-   - Storage requirements
-   - Bandwidth requirements
-   
-3. **High-Level Design** (10-15 mins)
-   - Draw main components
-   - Show data flow
-   
-4. **Detailed Design** (15-20 mins)
-   - Deep dive into components
-   - Data models
-   - Algorithms
-   
-5. **Scale & Optimize** (10 mins)
-   - Bottlenecks
-   - Trade-offs
-   - Monitoring
 
-### Q3: How to estimate system capacity?
+**Framework (RESHADED):**
+
+```
+Step 1: REQUIREMENTS (5-10 min)
+├── Functional: What should the system do?
+├── Non-functional: Scale, latency, availability?
+├── Constraints: Budget, timeline, team size?
+└── Out of scope: What are we NOT building?
+
+Step 2: ESTIMATION (5 min)
+├── Users: DAU, MAU, peak concurrent
+├── Traffic: QPS (read/write ratio)
+├── Storage: Data size × retention
+└── Bandwidth: Traffic × data size
+
+Step 3: HIGH-LEVEL DESIGN (10-15 min)
+├── Draw major components
+├── Show data flow
+├── Identify APIs
+└── Choose databases
+
+Step 4: DETAILED DESIGN (15-20 min)
+├── Deep dive on 2-3 critical components
+├── Data models and schemas
+├── Algorithms and data structures
+└── API contracts
+
+Step 5: SCALE & OPTIMIZE (10 min)
+├── Identify bottlenecks
+├── Add caching, CDN, load balancing
+├── Database scaling (sharding, replication)
+└── Discuss trade-offs
+
+Step 6: MONITORING & OPERATIONS
+├── Logging and metrics
+├── Alerting
+├── Deployment strategy
+└── Disaster recovery
+```
+
+### Q3: What questions should you ask at the start?
 **Answer:**
-**Example: Twitter-like system**
-```
-Users: 500M total, 200M DAU
-Tweets: 500M tweets/day
-Read:Write ratio: 100:1
 
-Calculations:
-- Tweets/second: 500M / (24*3600) ≈ 6000 tweets/sec
-- Peak (2x average): 12000 tweets/sec
-- Reads/second: 600K reads/sec
+**Functional Requirements:**
+- What are the core features? (MVP vs full product)
+- Who are the users? (B2C, B2B, internal)
+- What actions can users perform?
+- What data needs to be stored?
 
-Storage (5 years):
-- Tweet size: 280 chars = 560 bytes + metadata = 1KB
-- Media: 20% tweets have media, avg 200KB
-- Daily: 500M * 1KB + 100M * 200KB = 500GB + 20TB ≈ 20TB/day
-- 5 years: 20TB * 365 * 5 = 36.5PB
+**Non-functional Requirements:**
+- What's the expected scale? (users, requests/second)
+- What's the acceptable latency? (real-time vs batch)
+- What's the availability requirement? (99.9%? 99.99%?)
+- Consistency requirements? (strong vs eventual)
 
-Bandwidth:
-- Write: 12000 * 1KB = 12MB/s
-- Read: 600K * 1KB = 600MB/s
-```
+**Constraints:**
+- Is this a new system or adding to existing?
+- Any technology preferences or restrictions?
+- Geographic distribution requirements?
+- Compliance/security requirements (GDPR, HIPAA)?
+
+---
 
 ## Scalability Concepts
 
 ### Q4: What is horizontal vs vertical scaling?
 **Answer:**
-**Vertical Scaling (Scale-up):**
-- Add more power (CPU, RAM) to existing machine
-- Pros: Simple, no code changes, good for ACID transactions
-- Cons: Hardware limits, single point of failure, expensive
 
-**Horizontal Scaling (Scale-out):**
-- Add more machines to the pool
-- Pros: No hardware limit, fault tolerance, cost-effective
-- Cons: Complex architecture, data consistency challenges
+| Aspect | Vertical (Scale-up) | Horizontal (Scale-out) |
+|--------|---------------------|------------------------|
+| **Method** | Bigger machine (CPU, RAM) | More machines |
+| **Limit** | Hardware ceiling | Practically unlimited |
+| **Complexity** | Simple, no code changes | Complex, distributed systems |
+| **Cost** | Expensive at high end | Cost-effective |
+| **Downtime** | Usually required | Can scale live |
+| **Failure** | Single point of failure | Fault tolerant |
+| **Best for** | Databases, stateful apps | Stateless web servers |
 
-### Q5: Explain different types of system architectures.
+```
+Vertical Scaling:
+┌─────────────────────┐
+│  Before     After   │
+│  ┌─────┐   ┌─────┐  │
+│  │ 4GB │   │32GB │  │
+│  │ 2CPU│   │16CPU│  │
+│  └─────┘   └─────┘  │
+└─────────────────────┘
+
+Horizontal Scaling:
+┌─────────────────────────────────┐
+│  Before          After          │
+│  ┌─────┐   ┌─────┐┌─────┐┌─────┐│
+│  │ App │   │ App ││ App ││ App ││
+│  └─────┘   └─────┘└─────┘└─────┘│
+└─────────────────────────────────┘
+```
+
+### Q5: What makes a system scalable?
 **Answer:**
-1. **Monolithic**: Single deployable unit
-2. **Service-Oriented (SOA)**: Services communicate through ESB
-3. **Microservices**: Small, independent services
-4. **Serverless**: Functions as a Service (FaaS)
-5. **Event-Driven**: Components communicate through events
-6. **Layered**: Organized in hierarchical layers
 
-### Q6: What are the key metrics for system performance?
+**Key Properties:**
+
+1. **Statelessness**: No session data on servers
+```java
+// Bad: Stateful
+public class ShoppingCart {
+    private static Map<String, List<Item>> carts = new HashMap<>();
+}
+
+// Good: Stateless (store in Redis)
+public class ShoppingCartService {
+    private RedisTemplate<String, Cart> redis;
+    
+    public Cart getCart(String userId) {
+        return redis.opsForValue().get("cart:" + userId);
+    }
+}
+```
+
+2. **Loose Coupling**: Independent components
+3. **Asynchronous Processing**: Queue work for later
+4. **Data Partitioning**: Distribute data across nodes
+5. **Caching**: Reduce database load
+6. **Load Balancing**: Distribute traffic evenly
+
+### Q6: What is consistent hashing?
 **Answer:**
-- **Response Time**: Time to process a request
-- **Throughput**: Number of requests processed per unit time
-- **Availability**: Percentage of time system is operational
-- **Latency**: Delay before transfer begins
-- **Bandwidth**: Maximum data transfer rate
-- **QPS (Queries Per Second)**: Request rate
 
-**SLA Availability Levels:**
-- 99% = 3.65 days/year downtime
-- 99.9% = 8.76 hours/year
-- 99.99% = 52.56 minutes/year
-- 99.999% = 5.26 minutes/year
+Consistent hashing minimizes remapping when nodes are added/removed.
 
-## CAP Theorem & Distributed Systems
+**Traditional Hashing Problem:**
+```
+hash(key) % N servers
+If N changes: almost all keys remap (bad for caches!)
+```
+
+**Consistent Hashing:**
+```
+Ring: 0 ────────────────────────── 2^32-1
+            ↓
+      ┌─────────────┐
+     /               \
+    S1    S2    S3    S4    ← Servers mapped to ring
+    │     │     │     │
+    K1    K2    K3    K4    ← Keys go to next server clockwise
+```
+
+**Implementation:**
+```java
+public class ConsistentHash<T> {
+    private final TreeMap<Long, T> ring = new TreeMap<>();
+    private final int virtualNodes;
+    
+    public ConsistentHash(int virtualNodes) {
+        this.virtualNodes = virtualNodes;
+    }
+    
+    public void addNode(T node) {
+        for (int i = 0; i < virtualNodes; i++) {
+            long hash = hash(node.toString() + i);
+            ring.put(hash, node);
+        }
+    }
+    
+    public void removeNode(T node) {
+        for (int i = 0; i < virtualNodes; i++) {
+            long hash = hash(node.toString() + i);
+            ring.remove(hash);
+        }
+    }
+    
+    public T getNode(String key) {
+        if (ring.isEmpty()) return null;
+        long hash = hash(key);
+        // Find first node at or after hash
+        Map.Entry<Long, T> entry = ring.ceilingEntry(hash);
+        if (entry == null) {
+            entry = ring.firstEntry();  // Wrap around
+        }
+        return entry.getValue();
+    }
+    
+    private long hash(String key) {
+        return Hashing.murmur3_128().hashString(key, UTF_8).asLong();
+    }
+}
+```
+
+**Benefits:**
+- Add server: only K/N keys remap (K=keys, N=servers)
+- Remove server: only keys from that server remap
+- Virtual nodes ensure even distribution
+
+---
+
+## CAP Theorem & Consistency
 
 ### Q7: Explain the CAP theorem.
 **Answer:**
-CAP theorem states a distributed system can guarantee only 2 of 3:
-- **Consistency**: All nodes see the same data simultaneously
-- **Availability**: System remains operational
-- **Partition Tolerance**: System continues despite network failures
 
-**Trade-offs:**
-- **CP Systems**: Consistency over Availability (HBase, MongoDB)
-- **AP Systems**: Availability over Consistency (Cassandra, DynamoDB)
-- **CA Systems**: Not possible in distributed systems with network partitions
+CAP theorem states a distributed system can guarantee only **2 of 3**:
 
-### Q8: What is ACID vs BASE?
+```
+         Consistency
+             ╱╲
+            ╱  ╲
+           ╱ CP ╲      ← Choose 2
+          ╱──────╲
+         ╱   CA   ╲    ← Not possible with partitions
+        ╱──────────╲
+       ╱     AP     ╲
+      ╱──────────────╲
+Availability ──────── Partition Tolerance
+```
+
+**Definitions:**
+- **Consistency (C)**: All nodes see the same data at the same time
+- **Availability (A)**: Every request gets a response (success/failure)
+- **Partition Tolerance (P)**: System works despite network failures
+
+**Real-world choice (since P is required):**
+
+| System Type | Choice | Examples | Use Case |
+|-------------|--------|----------|----------|
+| CP | Consistency + Partition Tolerance | ZooKeeper, HBase, MongoDB (default) | Banking, inventory |
+| AP | Availability + Partition Tolerance | Cassandra, DynamoDB, Couchbase | Social media, product catalogs |
+
+### Q8: What is PACELC theorem?
 **Answer:**
-**ACID (Traditional RDBMS):**
-- **Atomicity**: All or nothing
-- **Consistency**: Valid state transitions
-- **Isolation**: Concurrent operations don't interfere
-- **Durability**: Committed data persists
 
-**BASE (NoSQL):**
-- **Basically Available**: System is available
-- **Soft State**: State may change over time
-- **Eventual Consistency**: Will become consistent eventually
+PACELC extends CAP to address normal operations:
+
+```
+P(artition)  →  A(vailability) vs C(onsistency)
+E(lse)       →  L(atency) vs C(onsistency)
+```
+
+**During Partition:** Choose Availability or Consistency
+**Else (normal):** Choose Latency or Consistency
+
+| System | P: A vs C | E: L vs C |
+|--------|-----------|-----------|
+| DynamoDB | A | L |
+| Cassandra | A | L |
+| MongoDB | C | C |
+| PNUTS | A | C |
+| VoltDB | C | C |
 
 ### Q9: Explain different consistency models.
 **Answer:**
-1. **Strong Consistency**: All reads return most recent write
-2. **Eventual Consistency**: System will become consistent over time
-3. **Weak Consistency**: No guarantees when all nodes will be consistent
-4. **Read-after-Write**: User sees their own writes immediately
-5. **Monotonic Read**: Once seen, won't see older version
-6. **Causal Consistency**: Causally related operations seen in order
 
-### Q10: What is consensus in distributed systems?
+| Model | Guarantee | Example |
+|-------|-----------|---------|
+| **Strong/Linearizable** | Reads always return latest write | Single-node DB, ZooKeeper |
+| **Sequential** | All operations appear in some total order | Distributed transactions |
+| **Causal** | Causally related operations ordered correctly | Social feeds |
+| **Read-your-writes** | User always sees their own writes | User sessions |
+| **Eventual** | Given no updates, all reads eventually return same value | DNS, Cassandra |
+
+```java
+// Strong Consistency
+// User A writes, User B immediately sees update
+write(x, 1)  // User A
+read(x) → 1  // User B (guaranteed)
+
+// Eventual Consistency
+// User A writes, User B may see stale data temporarily
+write(x, 1)  // User A
+read(x) → 0  // User B (old value)
+// ... some time passes ...
+read(x) → 1  // User B (eventually consistent)
+```
+
+### Q10: What is quorum in distributed systems?
 **Answer:**
-Consensus algorithms ensure nodes agree on values:
 
-**Paxos**: Complex but proven consensus algorithm
-**Raft**: Simpler alternative to Paxos
-**Zab**: Used in Zookeeper
+**Quorum** ensures consistency by requiring minimum nodes to agree.
 
-**Key concepts:**
-- Leader election
-- Log replication
-- Majority agreement (quorum)
+```
+N = Total replicas
+W = Write quorum (nodes that must acknowledge write)
+R = Read quorum (nodes that must respond to read)
+
+Strong consistency when: W + R > N
+```
+
+**Examples:**
+```
+N=3, W=2, R=2: Strong consistency (2+2 > 3)
+N=3, W=1, R=1: Eventual consistency, fast (1+1 < 3)
+N=3, W=3, R=1: Strong consistency, slow writes
+N=3, W=1, R=3: Strong consistency, slow reads
+```
+
+**Implementation:**
+```java
+public class QuorumReplication {
+    private List<Node> replicas;
+    private int W, R;
+    
+    public void write(String key, String value) {
+        int acks = 0;
+        for (Node replica : replicas) {
+            try {
+                replica.write(key, value);
+                acks++;
+            } catch (Exception e) {
+                // Node failed
+            }
+        }
+        if (acks < W) {
+            throw new WriteFailedException("Quorum not reached");
+        }
+    }
+    
+    public String read(String key) {
+        List<VersionedValue> responses = new ArrayList<>();
+        for (Node replica : replicas) {
+            try {
+                responses.add(replica.read(key));
+                if (responses.size() >= R) break;
+            } catch (Exception e) {
+                // Node failed
+            }
+        }
+        if (responses.size() < R) {
+            throw new ReadFailedException("Quorum not reached");
+        }
+        // Return value with highest version
+        return responses.stream()
+            .max(Comparator.comparing(VersionedValue::getVersion))
+            .map(VersionedValue::getValue)
+            .orElse(null);
+    }
+}
+```
+
+---
 
 ## Load Balancing
 
 ### Q11: What are different load balancing algorithms?
 **Answer:**
-1. **Round Robin**: Requests distributed sequentially
-2. **Weighted Round Robin**: Based on server capacity
-3. **Least Connections**: Route to server with fewest connections
-4. **Least Response Time**: Route to fastest server
-5. **IP Hash**: Route based on client IP
-6. **Random**: Random server selection
-7. **Consistent Hashing**: Minimizes remapping when servers change
 
-### Q12: Explain L4 vs L7 load balancing.
+| Algorithm | Description | Best For |
+|-----------|-------------|----------|
+| **Round Robin** | Sequential rotation | Homogeneous servers, similar requests |
+| **Weighted Round Robin** | Based on server capacity | Heterogeneous servers |
+| **Least Connections** | Route to least busy server | Varying request duration |
+| **Least Response Time** | Route to fastest server | Performance-critical apps |
+| **IP Hash** | Consistent by client IP | Session affinity needed |
+| **Random** | Random selection | Simple, even distribution |
+| **Consistent Hashing** | Minimal remapping | Caching, distributed systems |
+
+```
+Round Robin:
+Request 1 → Server A
+Request 2 → Server B
+Request 3 → Server C
+Request 4 → Server A  (cycles back)
+
+Least Connections:
+Server A: 5 connections
+Server B: 3 connections  ← Next request goes here
+Server C: 7 connections
+```
+
+### Q12: What is the difference between L4 and L7 load balancing?
 **Answer:**
-**L4 (Transport Layer):**
-- Works with IP and port
-- Faster, less CPU intensive
-- Can't inspect application data
-- TCP/UDP level
 
-**L7 (Application Layer):**
-- Can inspect HTTP headers, URLs
-- Content-based routing
-- SSL termination
-- More CPU intensive
+| Aspect | L4 (Transport) | L7 (Application) |
+|--------|----------------|------------------|
+| **Layer** | TCP/UDP | HTTP/HTTPS |
+| **Decision basis** | IP, port | URL, headers, cookies, content |
+| **SSL termination** | No (pass-through) | Yes |
+| **Content-based routing** | No | Yes |
+| **Performance** | Faster | Slower |
+| **Features** | Basic load balancing | URL routing, auth, caching |
+| **Examples** | HAProxy (L4 mode), AWS NLB | Nginx, HAProxy (L7), AWS ALB |
 
-### Q13: How to implement sticky sessions?
+```
+L4 Load Balancing:
+┌─────────┐     ┌─────┐     ┌─────────┐
+│ Client  │────▶│ LB  │────▶│ Server  │
+│ IP:Port │     │     │     │ IP:Port │
+└─────────┘     └─────┘     └─────────┘
+                  │ TCP connection forwarded
+
+L7 Load Balancing:
+┌─────────┐     ┌─────┐     ┌─────────┐
+│ Client  │────▶│ LB  │────▶│ Server A│ ← /api/*
+│ HTTP Req│     │     │────▶│ Server B│ ← /images/*
+└─────────┘     └─────┘     │ Server C│ ← /static/*
+                  │ HTTP routing by URL
+```
+
+### Q13: How to implement health checks?
 **Answer:**
-Methods to maintain session affinity:
-1. **Cookie-based**: LB sets cookie with server ID
-2. **IP-based**: Route based on source IP
-3. **Session ID**: Extract from application layer
 
-**Drawbacks:**
-- Uneven load distribution
-- Difficult to scale
-- Session loss on server failure
+```java
+// Simple HTTP health check
+@RestController
+public class HealthController {
+    
+    @GetMapping("/health")
+    public ResponseEntity<Health> health() {
+        return ResponseEntity.ok(
+            Health.builder()
+                .status(Status.UP)
+                .withDetail("database", checkDatabase())
+                .withDetail("cache", checkCache())
+                .withDetail("memory", getMemoryStatus())
+                .build()
+        );
+    }
+}
 
-**Better approach**: Store sessions in distributed cache (Redis)
+// Load balancer configuration (Nginx)
+upstream backend {
+    server backend1.example.com:8080 weight=5;
+    server backend2.example.com:8080 weight=3;
+    server backend3.example.com:8080 backup;
+}
+
+server {
+    location / {
+        proxy_pass http://backend;
+        
+        # Health check
+        health_check interval=5s fails=3 passes=2 uri=/health;
+    }
+}
+```
+
+**Health Check Types:**
+1. **Liveness**: Is the process running?
+2. **Readiness**: Is it ready to receive traffic?
+3. **Startup**: Has it finished initializing?
+
+---
 
 ## Caching Strategies
 
-### Q14: What are different caching strategies?
+### Q14: What are different caching patterns?
 **Answer:**
-1. **Cache-Aside (Lazy Loading)**:
-   - Read: Check cache → miss → load from DB → update cache
-   - Write: Write to DB → invalidate cache
-   
-2. **Write-Through**:
-   - Write to cache and DB simultaneously
-   - Ensures consistency
-   - Higher latency
-   
-3. **Write-Behind (Write-Back)**:
-   - Write to cache immediately
-   - Async write to DB
-   - Risk of data loss
-   
-4. **Refresh-Ahead**:
-   - Proactively refresh before expiration
-   - Good for predictable access patterns
 
-### Q15: Where to implement caching?
-**Answer:**
-1. **Browser Cache**: HTTP headers (Cache-Control, ETag)
-2. **CDN**: Static content, geographically distributed
-3. **Reverse Proxy**: Nginx, Varnish
-4. **Application Cache**: In-memory, Redis, Memcached
-5. **Database Cache**: Query result cache
-
-### Q16: How to handle cache invalidation?
-**Answer:**
-**Strategies:**
-1. **TTL (Time To Live)**: Automatic expiration
-2. **Event-based**: Invalidate on data change
-3. **Manual**: Explicit invalidation
-4. **Versioning**: New key for new version
-
-**Patterns:**
+**1. Cache-Aside (Lazy Loading)**
 ```java
-// Cache-aside with TTL
+public User getUser(String userId) {
+    // Check cache first
+    User user = cache.get("user:" + userId);
+    if (user != null) {
+        return user;  // Cache hit
+    }
+    
+    // Cache miss: load from database
+    user = database.findUser(userId);
+    
+    // Populate cache
+    cache.set("user:" + userId, user, Duration.ofMinutes(30));
+    
+    return user;
+}
+
+// Write: invalidate cache
+public void updateUser(User user) {
+    database.updateUser(user);
+    cache.delete("user:" + user.getId());  // Invalidate
+}
+```
+
+**2. Write-Through**
+```java
+public void updateUser(User user) {
+    // Write to cache AND database synchronously
+    cache.set("user:" + user.getId(), user);
+    database.updateUser(user);
+}
+```
+
+**3. Write-Behind (Write-Back)**
+```java
+public void updateUser(User user) {
+    // Write to cache immediately
+    cache.set("user:" + user.getId(), user);
+    
+    // Queue async write to database
+    writeQueue.add(new WriteOperation(user));
+}
+
+// Background worker
+@Scheduled(fixedRate = 1000)
+public void flushWrites() {
+    List<WriteOperation> ops = writeQueue.drain();
+    database.batchUpdate(ops);
+}
+```
+
+**4. Refresh-Ahead**
+```java
+public User getUser(String userId) {
+    CacheEntry entry = cache.getWithMetadata("user:" + userId);
+    
+    if (entry != null) {
+        // If close to expiry, refresh in background
+        if (entry.isCloseToExpiry()) {
+            executor.submit(() -> refreshCache(userId));
+        }
+        return entry.getValue();
+    }
+    
+    return loadAndCache(userId);
+}
+```
+
+### Q15: What is cache stampede and how to prevent it?
+**Answer:**
+
+**Problem:** Cache expires → many concurrent requests → all hit database → database overwhelmed
+
+```
+Time 0: Cache expires
+Time 0: Request 1 → Cache miss → DB query
+Time 0: Request 2 → Cache miss → DB query
+Time 0: Request 3 → Cache miss → DB query
+...100 requests all hit DB simultaneously!
+```
+
+**Solutions:**
+
+**1. Locking (Mutex)**
+```java
 public User getUser(String userId) {
     String key = "user:" + userId;
     User user = cache.get(key);
     
     if (user == null) {
-        user = database.getUser(userId);
-        cache.set(key, user, TTL_SECONDS);
+        String lockKey = "lock:" + key;
+        
+        if (cache.setIfAbsent(lockKey, "1", Duration.ofSeconds(30))) {
+            try {
+                // Only this thread rebuilds cache
+                user = database.findUser(userId);
+                cache.set(key, user, Duration.ofMinutes(30));
+            } finally {
+                cache.delete(lockKey);
+            }
+        } else {
+            // Another thread is rebuilding, wait and retry
+            Thread.sleep(50);
+            return getUser(userId);  // Retry
+        }
     }
     return user;
 }
+```
 
-// Write-through
-public void updateUser(User user) {
-    database.updateUser(user);
-    cache.set("user:" + user.getId(), user);
+**2. Probabilistic Early Expiration**
+```java
+public User getUser(String userId) {
+    CacheEntry entry = cache.getWithExpiry("user:" + userId);
+    
+    if (entry != null) {
+        long ttl = entry.getTimeToLive();
+        long delta = entry.getComputeTime();  // Time to rebuild
+        double beta = 1.0;  // Tuning parameter
+        
+        // Random early expiration
+        double random = -delta * beta * Math.log(Math.random());
+        if (random >= ttl) {
+            // Refresh proactively
+            return refreshCache(userId);
+        }
+        return entry.getValue();
+    }
+    
+    return loadAndCache(userId);
 }
 ```
+
+**3. Background Refresh**
+```java
+@Scheduled(fixedRate = 60000)
+public void refreshPopularItems() {
+    List<String> hotKeys = analytics.getTopAccessedKeys(100);
+    for (String key : hotKeys) {
+        refreshIfExpiringSoon(key);
+    }
+}
+```
+
+### Q16: Where should you implement caching?
+**Answer:**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      Caching Layers                          │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  ┌─────────────┐                                            │
+│  │   Browser   │  HTTP Cache (Cache-Control, ETag)          │
+│  └──────┬──────┘                                            │
+│         │                                                    │
+│  ┌──────▼──────┐                                            │
+│  │     CDN     │  Static assets, API responses              │
+│  └──────┬──────┘                                            │
+│         │                                                    │
+│  ┌──────▼──────┐                                            │
+│  │   Gateway   │  Rate limiting, auth tokens                │
+│  └──────┬──────┘                                            │
+│         │                                                    │
+│  ┌──────▼──────┐                                            │
+│  │Application  │  Redis/Memcached (session, objects)        │
+│  └──────┬──────┘                                            │
+│         │                                                    │
+│  ┌──────▼──────┐                                            │
+│  │  Database   │  Query cache, buffer pool                  │
+│  └─────────────┘                                            │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
 
 ## Database Design & Sharding
 
-### Q17: When to use SQL vs NoSQL?
+### Q17: When should you shard a database?
 **Answer:**
-**SQL (RDBMS):**
-- ACID compliance required
-- Complex queries and joins
-- Structured data with relationships
-- Examples: PostgreSQL, MySQL
 
-**NoSQL:**
-- **Document**: Semi-structured data (MongoDB)
-- **Key-Value**: Simple lookups (Redis, DynamoDB)
-- **Column-Family**: Wide columns (Cassandra, HBase)
-- **Graph**: Connected data (Neo4j)
+**Shard when:**
+- Single database can't handle write load
+- Data doesn't fit in one machine's storage
+- Query latency degrades with data size
+- Read replicas can't solve write bottlenecks
 
-### Q18: What is database sharding?
-**Answer:**
-Sharding splits data across multiple databases.
+**Sharding Strategies:**
 
-**Strategies:**
-1. **Range-based**: By value range (A-M, N-Z)
-2. **Hash-based**: Hash function determines shard
-3. **Geographic**: By location
-4. **Directory-based**: Lookup service maintains mapping
+| Strategy | Description | Pros | Cons |
+|----------|-------------|------|------|
+| **Hash-based** | hash(key) % N | Even distribution | Hard to add shards |
+| **Range-based** | By value ranges | Range queries efficient | Hot spots possible |
+| **Geographic** | By location | Data locality | Uneven distribution |
+| **Directory-based** | Lookup table | Flexible | Lookup is SPOF |
 
-**Challenges:**
-- Joins across shards
-- Rebalancing data
-- Hot spots
-- Maintaining consistency
-
-### Q19: How to handle database replication?
-**Answer:**
-**Master-Slave Replication:**
-- Write to master, read from slaves
-- Eventual consistency
-- Read scaling
-
-**Master-Master Replication:**
-- Write to any master
-- Conflict resolution needed
-- Better availability
-
-**Implementation considerations:**
-- Replication lag
-- Failover mechanism
-- Data consistency
-- Split-brain problem
-
-### Q20: Design a URL shortener (like bit.ly).
-**Answer:**
-**Requirements:**
-- Shorten long URLs
-- Redirect to original URL
-- 100M URLs/day
-- Analytics
-
-**Design:**
-```
-Components:
-1. API Gateway
-2. Application Servers
-3. Cache Layer (Redis)
-4. Database (NoSQL for scale)
-5. Analytics Service
-
-Data Model:
-ShortURL {
-  short_url: string (primary key)
-  long_url: string
-  created_at: timestamp
-  expires_at: timestamp
-  click_count: integer
+```java
+// Hash-based sharding
+public int getShardId(String userId) {
+    return Math.abs(userId.hashCode() % numShards);
 }
 
-Algorithm:
-- Base62 encoding (a-z, A-Z, 0-9)
-- 7 characters = 62^7 = 3.5 trillion URLs
-- Counter-based or hash-based generation
+// Range-based sharding
+public int getShardId(LocalDate date) {
+    // Shard by month
+    return date.getYear() * 12 + date.getMonthValue();
+}
 
-API:
-POST /shorten
-  Body: { "url": "https://example.com/very/long/url" }
-  Response: { "short_url": "https://bit.ly/abc123" }
-
-GET /{short_code}
-  Response: 301 Redirect to long URL
-
-Optimizations:
-- Cache popular URLs
-- Geographic distribution (CDN)
-- Rate limiting
-- Custom URLs for premium users
+// Consistent hashing (best for scaling)
+public String getShardId(String key) {
+    return consistentHash.getNode(key).getId();
+}
 ```
 
-## Message Queues & Streaming
-
-### Q21: When to use message queues vs event streaming?
+### Q18: How to choose a shard key?
 **Answer:**
-**Message Queues (RabbitMQ, SQS):**
-- Point-to-point communication
-- Message deleted after consumption
-- Task distribution
-- Order processing, email sending
 
-**Event Streaming (Kafka, Kinesis):**
-- Publish-subscribe model
-- Events retained for period
-- Multiple consumers
-- Real-time analytics, event sourcing
+**Good Shard Key Properties:**
+1. **High Cardinality**: Many unique values (not boolean!)
+2. **Even Distribution**: Avoid hot spots
+3. **Query Patterns**: Support common queries without cross-shard joins
+4. **Immutable**: Shouldn't change (resharding is expensive)
 
-### Q22: Explain different messaging patterns.
+```
+✅ Good shard keys:
+- user_id (for user-centric apps)
+- order_id (for e-commerce)
+- device_id (for IoT)
+
+❌ Bad shard keys:
+- country_code (uneven: US >> Liechtenstein)
+- created_date (hot spot on current date)
+- status (low cardinality)
+```
+
+**Example: E-commerce**
+```sql
+-- Shard by customer_id
+-- Good: Customer queries are single-shard
+SELECT * FROM orders WHERE customer_id = 123;
+
+-- Bad: Cross-shard scatter-gather query
+SELECT * FROM orders WHERE created_at > '2024-01-01';
+```
+
+### Q19: How to handle cross-shard queries?
 **Answer:**
-1. **Point-to-Point**: One producer, one consumer
-2. **Publish-Subscribe**: One producer, multiple consumers
-3. **Request-Reply**: Synchronous communication
-4. **Message Router**: Route based on content
-5. **Message Translator**: Transform message format
 
-### Q23: How to ensure message delivery?
-**Answer:**
-**Delivery Guarantees:**
-1. **At-most-once**: May lose messages
-2. **At-least-once**: May duplicate (idempotency required)
-3. **Exactly-once**: No loss or duplication (complex)
+**Strategies:**
 
-**Implementation:**
+**1. Scatter-Gather**
 ```java
-// Idempotent consumer
-public void processMessage(Message message) {
-    String idempotencyKey = message.getId();
+public List<Order> searchOrders(SearchCriteria criteria) {
+    List<Future<List<Order>>> futures = new ArrayList<>();
     
-    if (processedMessages.contains(idempotencyKey)) {
-        return; // Already processed
+    // Query all shards in parallel
+    for (Shard shard : shards) {
+        futures.add(executor.submit(() -> 
+            shard.search(criteria)
+        ));
+    }
+    
+    // Gather and merge results
+    List<Order> results = new ArrayList<>();
+    for (Future<List<Order>> future : futures) {
+        results.addAll(future.get());
+    }
+    
+    // Sort and limit
+    return results.stream()
+        .sorted(criteria.getSort())
+        .limit(criteria.getLimit())
+        .collect(toList());
+}
+```
+
+**2. Denormalization**
+```
+Store duplicate data to avoid joins
+User shard: {user_id, name, email}
+Order shard: {order_id, user_id, user_name}  ← Denormalized
+```
+
+**3. Global Tables**
+```
+Small, rarely-changing tables replicated to all shards
+- Countries
+- Currencies
+- Product categories
+```
+
+### Q20: What is database replication?
+**Answer:**
+
+**Single-Leader (Master-Slave):**
+```
+        ┌─────────┐
+        │ Primary │ ← All writes
+        │ (Master)│
+        └────┬────┘
+     ┌───────┼───────┐
+     ▼       ▼       ▼
+┌────────┐┌────────┐┌────────┐
+│Replica1││Replica2││Replica3│ ← Reads distributed
+└────────┘└────────┘└────────┘
+```
+
+**Multi-Leader:**
+```
+┌─────────┐          ┌─────────┐
+│Primary 1│◀────────▶│Primary 2│
+│(Region A)│ sync    │(Region B)│
+└────┬────┘          └────┬────┘
+     ▼                    ▼
+ Replicas             Replicas
+```
+
+**Leaderless (Dynamo-style):**
+```
+Client writes to multiple nodes
+Quorum determines consistency
+```
+
+**Replication Lag:**
+```java
+// Problem: User writes, then reads from replica
+user.setName("New Name");
+userService.save(user);  // Goes to primary
+
+// Reads from replica that hasn't synced yet
+User loaded = userService.findById(id);  // May return old name!
+
+// Solution: Read-your-writes consistency
+// Route user's reads to primary after recent writes
+if (userSession.hasRecentWrites()) {
+    return primary.findById(id);
+} else {
+    return replica.findById(id);
+}
+```
+
+---
+
+## Content Delivery Networks
+
+### Q21: How do CDNs work?
+**Answer:**
+
+```
+Without CDN:
+User (Tokyo) ───────────────────────────▶ Origin (New York)
+                   ~200ms latency
+
+With CDN:
+User (Tokyo) ───▶ Edge (Tokyo) ───cache──▶ Origin (New York)
+                   ~20ms latency
+```
+
+**CDN Functions:**
+1. **Caching**: Store content at edge locations
+2. **Load Distribution**: Reduce origin load
+3. **DDoS Protection**: Absorb attack traffic
+4. **SSL Termination**: Handle TLS at edge
+5. **Compression**: gzip/brotli at edge
+
+**Cache Headers:**
+```http
+Cache-Control: public, max-age=31536000, immutable
+ETag: "abc123"
+Vary: Accept-Encoding
+```
+
+### Q22: What is the difference between push and pull CDN?
+**Answer:**
+
+| Aspect | Push CDN | Pull CDN |
+|--------|----------|----------|
+| **Upload** | You upload to CDN | CDN fetches on demand |
+| **Best for** | Static content, large files | Dynamic, frequently updated |
+| **Staleness** | You control updates | May serve stale on miss |
+| **Cost** | Pay for storage | Pay for bandwidth |
+| **Examples** | Video platforms | News websites |
+
+```
+Push CDN:
+1. You upload file to CDN
+2. CDN distributes to all edges
+3. Users request from nearest edge
+
+Pull CDN:
+1. User requests file
+2. Edge checks cache → miss
+3. Edge fetches from origin
+4. Edge caches and serves
+5. Subsequent requests served from cache
+```
+
+### Q23: How to invalidate CDN cache?
+**Answer:**
+
+**Strategies:**
+
+**1. Cache Busting (versioned URLs)**
+```html
+<!-- Old -->
+<script src="/app.js"></script>
+
+<!-- New (change URL on deployment) -->
+<script src="/app.js?v=2"></script>
+<!-- Or -->
+<script src="/app-abc123.js"></script>
+```
+
+**2. API Invalidation**
+```java
+// CloudFront invalidation
+cloudFront.createInvalidation(new CreateInvalidationRequest()
+    .withDistributionId(distributionId)
+    .withInvalidationBatch(new InvalidationBatch()
+        .withPaths(new Paths()
+            .withItems("/images/*", "/css/*")
+            .withQuantity(2))
+        .withCallerReference(UUID.randomUUID().toString())));
+```
+
+**3. Short TTL + Revalidation**
+```http
+Cache-Control: public, max-age=60, stale-while-revalidate=300
+```
+
+---
+
+## Message Queues & Async Processing
+
+### Q24: When to use message queues?
+**Answer:**
+
+**Use Cases:**
+1. **Decoupling**: Services communicate without direct dependency
+2. **Load Leveling**: Handle traffic spikes
+3. **Reliability**: Guaranteed delivery
+4. **Async Processing**: Background jobs
+
+```
+Synchronous (without queue):
+User ──▶ API ──▶ Email Service ──▶ Response
+         │
+         └─ If email service down, request fails
+
+Asynchronous (with queue):
+User ──▶ API ──▶ Queue ──▶ Email Worker
+         │         │
+         └─ Response immediately
+                   └─ Email sent later (even if worker was down)
+```
+
+### Q25: What are different delivery guarantees?
+**Answer:**
+
+| Guarantee | Description | How to Achieve |
+|-----------|-------------|----------------|
+| **At-most-once** | May lose messages | Fire and forget |
+| **At-least-once** | May duplicate | Ack after processing |
+| **Exactly-once** | No loss, no duplicates | Idempotency + transactions |
+
+```java
+// At-least-once with idempotency
+public void processMessage(Message message) {
+    String messageId = message.getId();
+    
+    // Check if already processed
+    if (processedMessages.contains(messageId)) {
+        message.acknowledge();
+        return;  // Skip duplicate
     }
     
     try {
         // Process message
-        processedMessages.add(idempotencyKey);
+        doWork(message.getPayload());
+        
+        // Mark as processed
+        processedMessages.add(messageId);
+        
+        // Acknowledge
         message.acknowledge();
     } catch (Exception e) {
-        message.retry();
+        // Don't acknowledge - will be redelivered
+        message.nack();
     }
 }
 ```
 
+### Q26: How to handle poison messages?
+**Answer:**
+
+```java
+public void processWithRetry(Message message) {
+    int retryCount = message.getRetryCount();
+    int maxRetries = 3;
+    
+    try {
+        process(message);
+        message.acknowledge();
+    } catch (Exception e) {
+        if (retryCount >= maxRetries) {
+            // Send to Dead Letter Queue
+            dlq.send(message);
+            message.acknowledge();
+            alerting.notify("Message sent to DLQ: " + message.getId());
+        } else {
+            // Retry with backoff
+            long delay = (long) Math.pow(2, retryCount) * 1000;
+            message.retry(delay);
+        }
+    }
+}
+```
+
+---
+
 ## Common System Design Problems
 
-### Q24: Design a distributed cache.
+### Q27: Design a URL Shortener (like bit.ly)
 **Answer:**
+
 **Requirements:**
-- GET/SET operations
-- TTL support
-- Eviction policies
-- High availability
+- Shorten long URLs
+- Redirect to original
+- 100M URLs/day, 1000:1 read/write ratio
+- Analytics
+
+**Estimation:**
+```
+Write: 100M/day = 1,160/sec, peak 2,300/sec
+Read: 100B/day = 1.16M/sec, peak 2.3M/sec
+Storage (5 years): 100M × 365 × 5 × 500 bytes = 91 TB
+```
 
 **Design:**
 ```
-Architecture:
-- Consistent hashing for distribution
-- Replication for availability
-- LRU eviction policy
-
-Components:
-1. Cache Servers (nodes)
-2. Consistent Hash Ring
-3. Replication Manager
-4. Client Library
-
-Data Structure:
-class CacheNode {
-    HashMap<String, CacheEntry> data;
-    LinkedList<String> lruList;
-    ReplicationManager replicator;
-}
-
-class CacheEntry {
-    String value;
-    long timestamp;
-    long ttl;
-}
-
-Operations:
-- GET: Hash key → Find node → Check TTL → Return value
-- SET: Hash key → Find node → Store → Replicate
-- DELETE: Hash key → Find node → Delete → Replicate
-
-Consistency:
-- Read repair for eventual consistency
-- Quorum reads/writes for strong consistency
+┌──────────┐     ┌──────────────┐     ┌─────────────┐
+│  Client  │────▶│ Load Balancer │────▶│ App Servers │
+└──────────┘     └──────────────┘     └──────┬──────┘
+                                             │
+                       ┌─────────────────────┼─────────────────────┐
+                       ▼                     ▼                     ▼
+                 ┌──────────┐          ┌──────────┐          ┌──────────┐
+                 │  Redis   │          │ Database │          │ Analytics│
+                 │  Cache   │          │ (NoSQL)  │          │ (Kafka)  │
+                 └──────────┘          └──────────┘          └──────────┘
 ```
 
-### Q25: Design a rate limiter.
-**Answer:**
-**Algorithms:**
-1. **Token Bucket**: Tokens refill at fixed rate
-2. **Leaky Bucket**: Fixed output rate
-3. **Fixed Window**: Count in fixed time windows
-4. **Sliding Window Log**: Track timestamp of each request
-5. **Sliding Window Counter**: Hybrid approach
-
-**Implementation:**
+**URL Generation:**
 ```java
-// Token Bucket
-public class TokenBucketRateLimiter {
+// Base62 encoding: a-z, A-Z, 0-9 = 62 characters
+// 7 characters = 62^7 = 3.5 trillion combinations
+
+public class UrlShortener {
+    private static final String ALPHABET = 
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    
+    // Counter-based (distributed counter with ZooKeeper)
+    public String shorten(String longUrl) {
+        long id = counter.getNextId();  // Distributed counter
+        String shortCode = toBase62(id);
+        database.save(new UrlMapping(shortCode, longUrl));
+        return "https://short.url/" + shortCode;
+    }
+    
+    private String toBase62(long num) {
+        StringBuilder sb = new StringBuilder();
+        while (num > 0) {
+            sb.append(ALPHABET.charAt((int)(num % 62)));
+            num /= 62;
+        }
+        return sb.reverse().toString();
+    }
+    
+    // Redirect with caching
+    public String resolve(String shortCode) {
+        String longUrl = cache.get(shortCode);
+        if (longUrl == null) {
+            longUrl = database.findByShortCode(shortCode);
+            cache.set(shortCode, longUrl, Duration.ofHours(24));
+        }
+        analytics.recordClick(shortCode);  // Async
+        return longUrl;
+    }
+}
+```
+
+### Q28: Design a Rate Limiter
+**Answer:**
+
+**Algorithms:**
+
+**1. Token Bucket**
+```java
+public class TokenBucket {
     private final long capacity;
-    private final long refillRate;
-    private long tokens;
+    private final double refillRatePerSecond;
+    private double tokens;
     private long lastRefillTime;
     
-    public synchronized boolean allowRequest() {
+    public synchronized boolean tryAcquire() {
         refill();
-        if (tokens > 0) {
+        if (tokens >= 1) {
             tokens--;
             return true;
         }
@@ -481,345 +1103,351 @@ public class TokenBucketRateLimiter {
     
     private void refill() {
         long now = System.currentTimeMillis();
-        long tokensToAdd = (now - lastRefillTime) * refillRate / 1000;
+        double tokensToAdd = (now - lastRefillTime) / 1000.0 * refillRatePerSecond;
         tokens = Math.min(capacity, tokens + tokensToAdd);
         lastRefillTime = now;
     }
 }
+```
 
-// Distributed Rate Limiter with Redis
-public class DistributedRateLimiter {
-    private RedisTemplate redis;
+**2. Sliding Window (Redis)**
+```java
+public class SlidingWindowRateLimiter {
+    private RedisTemplate<String, String> redis;
     
-    public boolean allowRequest(String userId, int limit, int window) {
-        String key = "rate_limit:" + userId;
-        Long count = redis.increment(key);
+    public boolean isAllowed(String userId, int limit, int windowSeconds) {
+        String key = "rate:" + userId;
+        long now = System.currentTimeMillis();
+        long windowStart = now - windowSeconds * 1000;
         
-        if (count == 1) {
-            redis.expire(key, window, TimeUnit.SECONDS);
+        // Remove old entries
+        redis.opsForZSet().removeRangeByScore(key, 0, windowStart);
+        
+        // Count current window
+        Long count = redis.opsForZSet().count(key, windowStart, now);
+        
+        if (count < limit) {
+            // Add this request
+            redis.opsForZSet().add(key, UUID.randomUUID().toString(), now);
+            redis.expire(key, windowSeconds, TimeUnit.SECONDS);
+            return true;
         }
-        
-        return count <= limit;
+        return false;
     }
 }
 ```
 
-### Q26: Design a notification system.
+### Q29: Design Twitter Feed
 **Answer:**
-**Requirements:**
-- Multiple channels (push, email, SMS)
-- User preferences
-- Priority levels
-- Delivery guarantees
 
-**Architecture:**
-```
-Components:
-1. API Gateway
-2. Notification Service
-3. Message Queue (Kafka)
-4. Channel Handlers
-5. Preference Service
-6. Template Service
-7. Analytics Service
+**Approach: Fan-out on Write vs Fan-out on Read**
 
-Flow:
-1. Client sends notification request
-2. Validate and enrich with user preferences
-3. Publish to message queue
-4. Channel handlers consume and deliver
-5. Track delivery status
+| Approach | Description | Pros | Cons |
+|----------|-------------|------|------|
+| **Fan-out on Write** | Pre-compute feeds when tweet posted | Fast reads | Slow writes, storage |
+| **Fan-out on Read** | Compute feed on request | Fast writes | Slow reads |
+| **Hybrid** | Fan-out for normal users, fan-in for celebrities | Balanced | Complex |
 
-Data Model:
-Notification {
-    id: UUID
-    user_id: string
-    type: enum (push, email, sms)
-    template_id: string
-    parameters: map
-    priority: enum (high, medium, low)
-    status: enum (pending, sent, failed)
-    retry_count: integer
+```java
+// Fan-out on Write
+public void postTweet(String userId, String content) {
+    Tweet tweet = new Tweet(userId, content);
+    tweetStore.save(tweet);
+    
+    // Get followers (async)
+    List<String> followers = userService.getFollowers(userId);
+    
+    for (String followerId : followers) {
+        // Add to each follower's feed cache
+        feedCache.prepend("feed:" + followerId, tweet.getId());
+    }
 }
 
-Reliability:
-- Retry with exponential backoff
-- Dead letter queue for failed messages
-- Idempotency for duplicate prevention
-```
-
-### Q27: Design a distributed task scheduler.
-**Answer:**
-**Requirements:**
-- Schedule one-time and recurring tasks
-- Distributed execution
-- Fault tolerance
-- Exactly-once execution
-
-**Design:**
-```
-Components:
-1. Scheduler Service
-2. Task Queue (Priority Queue)
-3. Worker Pool
-4. Lock Service (Zookeeper/Redis)
-5. Task Store (Database)
-
-Task Model:
-Task {
-    id: UUID
-    name: string
-    payload: json
-    schedule: cron_expression
-    next_run: timestamp
-    status: enum
-    retry_policy: object
+public List<Tweet> getFeed(String userId) {
+    // Simply read from pre-computed cache
+    List<String> tweetIds = feedCache.getRange("feed:" + userId, 0, 100);
+    return tweetStore.findByIds(tweetIds);
 }
 
-Execution Flow:
-1. Scheduler polls due tasks
-2. Acquire distributed lock
-3. Push to task queue
-4. Worker picks up task
-5. Execute with timeout
-6. Update task status
-7. Calculate next run (if recurring)
+// Hybrid for celebrities (>1M followers)
+public void postTweet(String userId, String content) {
+    Tweet tweet = new Tweet(userId, content);
+    tweetStore.save(tweet);
+    
+    if (userService.getFollowerCount(userId) < 10000) {
+        // Fan-out normally
+        fanOutToFollowers(userId, tweet);
+    } else {
+        // Celebrity: followers will pull on read
+        celebrityTweets.add("celebrity:" + userId, tweet.getId());
+    }
+}
 
-Fault Tolerance:
-- Leader election for scheduler
-- Task ownership with locks
-- Heartbeat for worker health
-- Automatic retry on failure
+public List<Tweet> getFeed(String userId) {
+    // Get pre-computed feed
+    List<String> tweetIds = feedCache.getRange("feed:" + userId, 0, 100);
+    
+    // Merge with celebrity tweets (fan-in on read)
+    List<String> celebrities = userService.getFollowedCelebrities(userId);
+    for (String celebrity : celebrities) {
+        tweetIds.addAll(celebrityTweets.getRecent("celebrity:" + celebrity));
+    }
+    
+    // Sort by time and return
+    return tweetStore.findByIds(tweetIds)
+        .stream()
+        .sorted(comparing(Tweet::getCreatedAt).reversed())
+        .limit(100)
+        .collect(toList());
+}
 ```
 
-## Real-World Architecture Examples
-
-### Q28: Design WhatsApp/Messenger.
+### Q30: Design a Chat Application (WhatsApp)
 **Answer:**
-**Features:**
-- 1-to-1 messaging
-- Group chat
-- Online status
+
+**Requirements:**
+- 1-on-1 and group messaging
+- Online presence
 - Read receipts
 - Media sharing
-
-**Architecture:**
-```
-Components:
-1. Chat Servers (WebSocket)
-2. Media Servers
-3. Notification Service
-4. Presence Service
-5. Database (Messages)
-6. Cache (Recent messages)
-
-Message Flow:
-1. Client → WebSocket → Chat Server
-2. Store in database
-3. Check recipient online status
-4. If online: Push via WebSocket
-5. If offline: Send push notification
-
-Data Model:
-Message {
-    id: UUID
-    sender_id: string
-    recipient_id: string
-    conversation_id: string
-    content: string
-    media_url: string
-    timestamp: datetime
-    status: enum (sent, delivered, read)
-}
-
-Optimizations:
 - End-to-end encryption
-- Message queue for reliability
-- CDN for media
-- Pagination for message history
-```
-
-### Q29: Design YouTube/Netflix.
-**Answer:**
-**Requirements:**
-- Video upload and processing
-- Streaming to millions
-- Recommendations
-- Search
 
 **Architecture:**
 ```
-Upload Pipeline:
-1. Upload to storage (S3)
-2. Queue processing job
-3. Transcode to multiple qualities
-4. Generate thumbnails
-5. Update metadata
-6. Distribute to CDN
-
-Streaming:
-- Adaptive bitrate streaming
-- CDN for global distribution
-- Pre-fetch popular content
-
-Components:
-1. Upload Service
-2. Video Processing (FFmpeg)
-3. Metadata Service
-4. CDN (CloudFront)
-5. Recommendation Service
-6. Search Service (Elasticsearch)
-
-Data Storage:
-- Videos: Object storage (S3)
-- Metadata: NoSQL (DynamoDB)
-- User data: RDBMS
-- Search index: Elasticsearch
+┌────────────┐                                    ┌────────────┐
+│  Client A  │◀──WebSocket──▶┌──────────────┐◀───│  Client B  │
+└────────────┘               │ Chat Gateway │     └────────────┘
+                             │   (Stateful) │
+                             └──────┬───────┘
+                                    │
+         ┌──────────────────────────┼──────────────────────────┐
+         ▼                          ▼                          ▼
+   ┌───────────┐            ┌──────────────┐           ┌───────────┐
+   │  Presence │            │   Message    │           │  Media    │
+   │  Service  │            │   Service    │           │  Service  │
+   └───────────┘            └──────────────┘           └───────────┘
+         │                          │                          │
+         ▼                          ▼                          ▼
+   ┌───────────┐            ┌──────────────┐           ┌───────────┐
+   │   Redis   │            │   Cassandra  │           │    S3     │
+   │ (Status)  │            │  (Messages)  │           │  (Files)  │
+   └───────────┘            └──────────────┘           └───────────┘
 ```
 
-### Q30: Design Uber/Lyft.
-**Answer:**
-**Core Features:**
-- Rider-driver matching
-- Real-time location tracking
-- Dynamic pricing
-- ETA calculation
-
-**Architecture:**
-```
-Services:
-1. User Service
-2. Driver Service
-3. Location Service
-4. Matching Service
-5. Pricing Service
-6. Trip Service
-7. Payment Service
-8. Notification Service
-
-Matching Algorithm:
-1. Rider requests ride
-2. Find nearby drivers (GeoHash/QuadTree)
-3. Send request to closest drivers
-4. First to accept gets the ride
-5. Notify rider
-
-Location Tracking:
-- Drivers send location every 4 seconds
-- Store in cache (Redis) with TTL
-- Use GeoHash for spatial indexing
-
-Data Model:
-Trip {
-    id: UUID
-    rider_id: string
-    driver_id: string
-    start_location: GeoPoint
-    end_location: GeoPoint
-    route: LineString
-    fare: decimal
-    status: enum
-    created_at: timestamp
+**Message Flow:**
+```java
+// Send message
+public void sendMessage(Message message) {
+    // 1. Store in database
+    messageStore.save(message);
+    
+    // 2. Check recipient online status
+    String recipientId = message.getRecipientId();
+    boolean isOnline = presenceService.isOnline(recipientId);
+    
+    if (isOnline) {
+        // 3a. Send via WebSocket
+        WebSocketSession session = sessionManager.getSession(recipientId);
+        session.sendMessage(message);
+    } else {
+        // 3b. Send push notification
+        pushService.sendNotification(recipientId, message);
+    }
+    
+    // 4. Send delivery receipt to sender
+    sendDeliveryReceipt(message.getSenderId(), message.getId());
 }
 
-Scalability:
-- City-based sharding
-- WebSocket for real-time updates
-- Caching for hot data
-- Event-driven architecture
-```
-
-## Performance Optimization
-
-### Q31: How to optimize database queries?
-**Answer:**
-1. **Indexing**: Create appropriate indexes
-2. **Query Optimization**: Use EXPLAIN, avoid N+1
-3. **Denormalization**: Trade space for speed
-4. **Partitioning**: Split large tables
-5. **Connection Pooling**: Reuse connections
-6. **Caching**: Cache frequent queries
-7. **Read Replicas**: Distribute read load
-
-### Q32: How to handle hot partitions?
-**Answer:**
-**Problem**: Uneven load distribution
-
-**Solutions:**
-1. **Add salt to key**: Distribute hot keys
-2. **Split hot partitions**: Manual intervention
-3. **Caching**: Cache hot data
-4. **Request coalescing**: Batch similar requests
-5. **Backpressure**: Rate limit hot keys
-
-## Monitoring & Debugging
-
-### Q33: What metrics should be monitored?
-**Answer:**
-**Golden Signals:**
-1. **Latency**: Response time distribution
-2. **Traffic**: Requests per second
-3. **Errors**: Error rate and types
-4. **Saturation**: Resource utilization
-
-**Additional Metrics:**
-- Business metrics (conversion, revenue)
-- Application metrics (cache hit rate)
-- Infrastructure metrics (CPU, memory, disk)
-
-### Q34: How to implement distributed tracing?
-**Answer:**
-**Components:**
-- Trace ID: Unique identifier for request
-- Span ID: Individual operation
-- Parent Span: Hierarchy of operations
-
-**Tools:**
-- Jaeger, Zipkin, AWS X-Ray
-
-**Implementation:**
-```java
-public class TracingInterceptor {
-    public Response intercept(Request request) {
-        String traceId = request.getHeader("X-Trace-ID");
-        if (traceId == null) {
-            traceId = UUID.randomUUID().toString();
-        }
-        
-        Span span = tracer.buildSpan("operation")
-            .withTag("trace.id", traceId)
-            .start();
-            
-        try {
-            // Forward trace ID to downstream services
-            request.addHeader("X-Trace-ID", traceId);
-            return next.handle(request);
-        } finally {
-            span.finish();
-        }
+// Online presence with heartbeat
+public class PresenceService {
+    private RedisTemplate<String, String> redis;
+    
+    public void heartbeat(String userId) {
+        redis.opsForValue().set(
+            "presence:" + userId, 
+            "online",
+            Duration.ofSeconds(30)  // TTL
+        );
+    }
+    
+    public boolean isOnline(String userId) {
+        return redis.hasKey("presence:" + userId);
     }
 }
 ```
+
+---
+
+## Estimation & Capacity Planning
+
+### Q31: What numbers should you memorize?
+**Answer:**
+
+**Latency Numbers:**
+```
+L1 cache reference:                   0.5 ns
+L2 cache reference:                     7 ns
+Main memory reference:                100 ns
+SSD random read:                   16,000 ns (16 μs)
+HDD seek:                       2,000,000 ns (2 ms)
+Round trip within datacenter:     500,000 ns (0.5 ms)
+Round trip CA → Netherlands:  150,000,000 ns (150 ms)
+```
+
+**Throughput:**
+```
+Read 1 MB sequentially from memory:     250,000 ns (0.25 ms)
+Read 1 MB sequentially from SSD:      1,000,000 ns (1 ms)
+Read 1 MB sequentially from HDD:     20,000,000 ns (20 ms)
+```
+
+**Powers of Two:**
+```
+2^10 = 1 KB (1,024 bytes)
+2^20 = 1 MB (1,048,576 bytes)
+2^30 = 1 GB
+2^40 = 1 TB
+```
+
+**Traffic:**
+```
+1 million requests/day = 12 requests/second
+1 billion requests/day = 12,000 requests/second
+```
+
+### Q32: How to estimate storage for Twitter?
+**Answer:**
+
+```
+Given:
+- 500M users
+- 200M DAU
+- Each user tweets 2 times/day average
+- Tweet: 140 chars = 280 bytes + metadata = 500 bytes
+- 20% tweets have media (avg 500KB)
+- Retention: 10 years
+
+Calculations:
+
+Daily tweets:
+= 200M × 2 = 400M tweets/day
+
+Daily storage (text):
+= 400M × 500 bytes = 200 GB/day
+
+Daily storage (media):
+= 400M × 20% × 500KB = 40 TB/day
+
+Total daily:
+≈ 40 TB/day (media dominates)
+
+10-year storage:
+= 40 TB × 365 × 10 = 146 PB
+
+With 3x replication:
+= 438 PB
+```
+
+### Q33: How to estimate bandwidth?
+**Answer:**
+
+```
+Given:
+- 1M users
+- Each user loads feed 10 times/day
+- Each feed request: 20 tweets × 1KB + 10 images × 100KB = 1 MB
+
+Daily bandwidth:
+= 1M × 10 × 1MB = 10 TB/day
+= 116 MB/sec average
+= 350 MB/sec peak (3x average)
+
+With CDN:
+- 80% served from CDN
+- Origin bandwidth: 70 MB/sec peak
+```
+
+### Q34: How to use Little's Law?
+**Answer:**
+
+**Little's Law**: L = λ × W
+
+Where:
+- L = Average number of items in system
+- λ = Arrival rate (items/time)
+- W = Average time in system
+
+```
+Example: Database connection pool sizing
+
+Given:
+- 1000 requests/second
+- Each query takes 50ms
+
+Connections needed:
+L = 1000/sec × 0.05 sec = 50 connections
+
+With safety margin (2x):
+Pool size = 100 connections
+```
+
+---
 
 ## Interview Tips
 
-### Q35: How to handle trade-offs in system design?
+### Q35: How to handle trade-offs?
 **Answer:**
-Always discuss trade-offs:
-1. **Consistency vs Availability**
-2. **Latency vs Throughput**
-3. **Space vs Time**
-4. **Simplicity vs Flexibility**
-5. **Cost vs Performance**
 
-Example: "For this social media feed, I'd choose eventual consistency over strong consistency because users can tolerate seeing slightly stale data, but the system must remain available."
+**Always acknowledge trade-offs:**
+
+```
+"There's a trade-off between consistency and availability here.
+For a banking system, I'd choose strong consistency because 
+showing incorrect balance is unacceptable. For social media likes,
+eventual consistency is fine since users can tolerate briefly 
+seeing an old count."
+```
+
+**Common trade-offs:**
+1. Consistency vs Availability (CAP)
+2. Latency vs Throughput
+3. Read optimization vs Write optimization
+4. Space vs Time (denormalization)
+5. Complexity vs Flexibility
 
 ### Q36: Common mistakes to avoid?
 **Answer:**
-1. **Over-engineering**: Don't add unnecessary complexity
-2. **Ignoring requirements**: Address all functional/non-functional requirements
-3. **No capacity planning**: Always estimate scale
-4. **Single point of failure**: Ensure redundancy
-5. **Ignoring data consistency**: Address CAP trade-offs
-6. **No monitoring plan**: Include observability
-7. **Security afterthought**: Consider security from start
+
+1. **Diving into details too fast**: Understand requirements first
+2. **Over-engineering**: Start simple, add complexity as needed
+3. **Single point of failure**: Always ask "what if X fails?"
+4. **Ignoring scale**: Design for expected load, discuss scaling
+5. **Not discussing trade-offs**: Every decision has pros/cons
+6. **Forgetting monitoring**: Include logging, metrics, alerting
+7. **Security as afterthought**: Consider from the start
+
+### Q37: How to structure your communication?
+**Answer:**
+
+```
+1. REPEAT the problem back
+   "So we're designing a URL shortener that handles 100M URLs/day..."
+
+2. ASK clarifying questions
+   "Should we support custom URLs? What's the URL expiration policy?"
+
+3. ESTIMATE scale
+   "That's about 1,160 writes/sec, 1.16M reads/sec..."
+
+4. DRAW and EXPLAIN high-level design
+   "Here's the overall architecture..."
+
+5. DEEP DIVE on key components
+   "Let me explain how the ID generation works..."
+
+6. DISCUSS trade-offs and alternatives
+   "We could use a counter vs hash approach..."
+
+7. ADDRESS scale and reliability
+   "For high availability, we'd add redundancy here..."
+```
