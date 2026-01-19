@@ -25,6 +25,8 @@ The project is fully implemented with 10 comprehensive markdown files covering a
 - [Design Patterns Content](feature-design-patterns.md) - SOLID, GoF patterns, enterprise patterns
 - [Database & Caching Content](feature-database-caching.md) - SQL/NoSQL, indexing, Redis
 - [Messaging Content](feature-messaging.md) - Kafka, RabbitMQ, event-driven architecture
+- [Solidity & Blockchain Content](feature-solidity-blockchain.md) - Ethereum, Solidity, Smart Contracts, Web3
+- [Kotlin Language Content](feature-kotlin-language.md) - Kotlin fundamentals, coroutines, Android, multiplatform
 
 ## Target Audience
 - Senior Java developers preparing for interviews
@@ -34,6 +36,8 @@ The project is fully implemented with 10 comprehensive markdown files covering a
 ## Related
 - [Decision: Content Structure](../decisions/001-content-structure.md)
 - [Decision: Topic Organization](../decisions/002-topic-organization.md)
+- [Decision: Blockchain Implementation](../decisions/003-blockchain-implementation.md)
+- [Decision: Kotlin Implementation](../decisions/004-kotlin-implementation.md)
 - [Pattern: Q&A Format](../knowledge/patterns/qa-format.md)
 - [Pattern: Code Examples](../knowledge/patterns/code-examples.md)
 

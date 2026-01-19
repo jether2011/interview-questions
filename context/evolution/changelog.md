@@ -131,6 +131,129 @@ All expanded files now feature:
 
 ---
 
+## [2026-01-19] - Added Solidity & Blockchain Feature (IMPLEMENTED)
+
+### Added
+- **solidity-blockchain.md** - New content file with 100 comprehensive Q&A entries covering Ethereum, Solidity, and Smart Contract development
+- **feature-solidity-blockchain.md** - Feature intent file documenting the scope and acceptance criteria
+- **003-blockchain-implementation.md** - ADR documenting the decision to add blockchain content with Q&A format
+
+### Context Updates
+- Updated `project-intent.md` with new Solidity & Blockchain feature reference
+- Updated `AGENTS.md` with new file in project structure
+- Created bidirectional links between feature and decision files
+
+### Content Coverage (Implemented)
+The feature covers 100 interview questions across 18 sections:
+1. Ethereum & Smart Contract Basics
+2. Solidity Language Fundamentals
+3. Data Types & Collections
+4. Structs & Enums
+5. Function Visibility & Modifiers
+6. Memory Locations & Gas
+7. Development Environment
+8. Wallets & Networks
+9. Dates, Strings & Advanced Types
+10. Inheritance & Code Reuse
+11. Address Types & Solidity 0.5 Changes
+12. Gas Optimization
+13. Contract Interactions
+14. Events & Logging
+15. Access Control Patterns
+16. Advanced Security (Re-entrancy, Gasless Transactions)
+17. Libraries
+18. Hashing & Randomness
+19. Assembly in Solidity
+
+### Reason for Change
+Expanding interview preparation coverage to include Web3 and blockchain development, reflecting growing demand for Solidity developers in the market.
+
+### Implementation Details
+- **Total Questions**: 100
+- **Difficulty Levels**: Easy (Q1-Q26), Intermediate (Q27-Q83), Difficult (Q84-Q100)
+- **Code Examples**: Solidity code blocks with syntax highlighting throughout
+- **Key Topics**: Smart contract basics, Solidity fundamentals, data types, structs/enums, visibility, gas/memory, development tools, contract interactions, events, access control, security (re-entrancy), libraries, hashing, assembly
+
+---
+
+## [2026-01-19] - Added Kotlin Language Feature
+
+### Added
+- **feature-kotlin-language.md** - New feature intent file for Kotlin programming language interview content
+- **004-kotlin-implementation.md** - ADR documenting the decision to add Kotlin content with Q&A format
+
+### Context Updates
+- Updated `project-intent.md` with new Kotlin Language feature reference
+- Updated `AGENTS.md` with new file in project structure
+- Created bidirectional links between feature and decision files
+
+### Content Coverage (Planned)
+The new feature will cover 100 interview questions across 17 sections based on [devinterview.io Kotlin interview questions](https://devinterview.io/questions/web-and-mobile-development/kotlin-interview-questions):
+
+1. Kotlin Fundamentals (10 questions)
+2. Control Flow and Error Handling (8 questions)
+3. Classes and Objects (9 questions)
+4. Functions and Lambdas (7 questions)
+5. Collections and Functional Constructs (6 questions)
+6. Coroutines and Concurrency (8 questions)
+7. Java Interoperability (5 questions)
+8. Advanced Topics (7 questions)
+9. Android Specific (7 questions)
+10. DSL and Meta-Programming (4 questions)
+11. Multiplatform Development (5 questions)
+12. Testing and Tooling (4 questions)
+13. Asynchronous Flow (4 questions)
+14. Project Setup (4 questions)
+15. Best Practices (4 questions)
+16. Future Directions (4 questions)
+17. Miscellaneous (4 questions)
+
+### Reason for Change
+Expanding interview preparation coverage to include Kotlin language, reflecting its status as the preferred language for Android development (officially recommended by Google) and growing adoption in backend development with frameworks like Ktor and Spring Boot.
+
+---
+
+## [2026-01-19] - Implemented Kotlin Language Content
+
+### Added
+- **kotlin-language.md** - New content file with 4,580 lines covering 100 Kotlin interview questions
+
+### Content Coverage (Implemented)
+All 100 questions implemented across 17 sections:
+
+1. **Kotlin Fundamentals** (Q1-Q10) - Type system, null safety, extension functions
+2. **Control Flow and Error Handling** (Q11-Q18) - when expressions, Elvis operator, smart casts
+3. **Classes and Objects** (Q19-Q27) - Data classes, sealed classes, companion objects
+4. **Functions and Lambdas** (Q28-Q34) - Higher-order functions, inline, scope functions
+5. **Collections and Functional Constructs** (Q35-Q40) - Lists, sets, maps, sequences
+6. **Coroutines and Concurrency** (Q41-Q48) - Suspend functions, scopes, dispatchers
+7. **Java Interoperability** (Q49-Q53) - JVM annotations, calling Java/Kotlin
+8. **Advanced Topics** (Q54-Q60) - Delegation, generics, inline classes
+9. **Android Specific** (Q61-Q67) - ViewBinding, ViewModel, lifecycleScope
+10. **DSL and Meta-Programming** (Q68-Q71) - Creating DSLs, reflection
+11. **Multiplatform Development** (Q72-Q76) - KMM, Kotlin/Native
+12. **Testing and Tooling** (Q77-Q80) - JUnit, MockK, Kotest
+13. **Asynchronous Flow** (Q81-Q84) - Flow, backpressure, SharedFlow
+14. **Project Setup** (Q85-Q88) - Gradle, dependencies
+15. **Best Practices** (Q89-Q92) - Conventions, performance
+16. **Future Directions** (Q93-Q96) - Kotlin evolution, adoption
+17. **Miscellaneous** (Q97-Q100) - JSON, idioms
+
+### Context Updates
+- Updated `feature-kotlin-language.md` status to implemented
+- Updated `004-kotlin-implementation.md` with outcomes
+- All acceptance criteria met
+
+### Quality Improvements
+Content includes:
+- Kotlin code examples with syntax highlighting
+- Comparison tables (Kotlin vs Java)
+- Practical Android examples
+- Coroutines and Flow patterns
+- Best practices and idioms
+
+---
+
 ## Future Changes
 
 <!-- 

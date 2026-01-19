@@ -35,7 +35,9 @@ root/
 │   │   └── feature-*.md                   # Feature intents
 │   ├── decisions/
 │   │   ├── 001-content-structure.md       # Content format decision
-│   │   └── 002-topic-organization.md      # Topic organization decision
+│   │   ├── 002-topic-organization.md      # Topic organization decision
+│   │   ├── 003-blockchain-implementation.md # Blockchain content decision
+│   │   └── 004-kotlin-implementation.md   # Kotlin content decision
 │   ├── knowledge/
 │   │   ├── patterns/
 │   │   │   ├── qa-format.md               # Q&A format pattern
@@ -54,7 +56,9 @@ root/
 ├── docker-kubernetes.md                   # Container content
 ├── design-patterns-solid.md               # Design patterns content
 ├── database-caching.md                    # Database content
-└── messaging-event-driven.md              # Messaging content
+├── messaging-event-driven.md              # Messaging content
+├── solidity-blockchain.md                 # Solidity & Blockchain content
+└── kotlin-language.md                     # Kotlin language content
 ```
 
 ## AI Agent Rules
