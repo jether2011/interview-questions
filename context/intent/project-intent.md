@@ -1,47 +1,42 @@
 # Project Intent: Senior Java Interview Preparation Guide
 
 ## What
-A comprehensive interview preparation resource for senior Java developer positions, covering core Java concepts, frameworks, architecture patterns, and system design topics through detailed Q&A format materials.
+A concise, dense interview reference for senior Java/backend developers targeting international positions. Content is organized by topic, written in English, with minimal code examples and Mermaid diagrams for architecture topics.
 
 ## Why
-To provide a structured, in-depth study resource that helps developers prepare for senior-level Java interviews by covering both theoretical concepts and practical implementations with real-world examples.
+Interview preparation materials tend to be either too shallow (no depth) or too verbose (hard to skim before an interview). This project aims for the sweet spot: direct answers that demonstrate real understanding, not memorization.
 
-## Current State
-The project is fully implemented with 10 comprehensive markdown files covering all major topics required for senior Java interviews. Each file contains:
-- Detailed Q&A format explanations
-- Java code examples
-- Best practices and real-world implementations
-- Common pitfalls and solutions
-- Trade-offs and decision criteria
+## Design Principles
+1. **Direct answers** — no filler, no hedging
+2. **Minimal code** — only what's needed to explain the concept
+3. **Comparison tables** — for "vs" questions
+4. **Mermaid diagrams** — for architecture, flow, and state topics
+5. **Interview-ready** — every Q maps to a real interview question
 
 ## Current Features
-- [Java Fundamentals Content](feature-java-fundamentals.md) - Core Java, collections, memory, JVM, Java 8+
-- [Multithreading Content](feature-multithreading.md) - Concurrency, synchronization, thread safety
-- [Spring Boot Content](feature-spring-boot.md) - Spring Framework, DI, MVC, JPA, Security
-- [Microservices Content](feature-microservices.md) - Architecture patterns, Saga, CQRS, resilience
-- [System Design Content](feature-system-design.md) - Scalability, CAP theorem, load balancing
-- [Distributed Systems Content](feature-distributed-systems.md) - Consistency, consensus, fault tolerance
-- [Docker & Kubernetes Content](feature-docker-kubernetes.md) - Containerization, orchestration
-- [Design Patterns Content](feature-design-patterns.md) - SOLID, GoF patterns, enterprise patterns
-- [Database & Caching Content](feature-database-caching.md) - SQL/NoSQL, indexing, Redis
-- [Messaging Content](feature-messaging.md) - Kafka, RabbitMQ, event-driven architecture
-- [Solidity & Blockchain Content](feature-solidity-blockchain.md) - Ethereum, Solidity, Smart Contracts, Web3
-- [Kotlin Language Content](feature-kotlin-language.md) - Kotlin fundamentals, coroutines, Android, multiplatform
+- [Java Fundamentals](feature-java-fundamentals.md) — OOP, Collections, Exceptions, Streams
+- [Multithreading](feature-multithreading.md) — Synchronization, thread contention, 10k RPS, race conditions
+- [Spring Boot](feature-spring-boot.md) — DI, Bean lifecycle, @Transactional, JPA, OAuth2, Docker, EC2
+- [Microservices](feature-microservices.md) — Service Discovery, API Gateway, Saga, CQRS, resilience
+- [System Design](feature-system-design.md) — CAP, caching, sharding, RESTful API design
+- [Distributed Systems](feature-distributed-systems.md) — Consensus, fault tolerance, Hexagonal Architecture
+- [Docker & Kubernetes](feature-docker-kubernetes.md) — Containers, K8s architecture, HPA, probes
+- [Design Patterns](feature-design-patterns.md) — SOLID, GoF, enterprise patterns
+- [Database & Caching](feature-database-caching.md) — SQL/NoSQL, indexes, isolation, Redis
+- [Messaging & EDA](feature-messaging.md) — Kafka, delivery guarantees, Outbox pattern, EDA principles
+- [Solidity & Blockchain](feature-solidity-blockchain.md) — EVM transactions E2E, revert, testing, Solidity
+- [Kotlin Language](feature-kotlin-language.md) — Coroutines, null safety, Android, Java interop
 
-## Target Audience
-- Senior Java developers preparing for interviews
-- Developers seeking to deepen their Java knowledge
-- Technical interviewers looking for reference materials
-
-## Related
-- [Decision: Content Structure](../decisions/001-content-structure.md)
-- [Decision: Topic Organization](../decisions/002-topic-organization.md)
-- [Decision: Blockchain Implementation](../decisions/003-blockchain-implementation.md)
-- [Decision: Kotlin Implementation](../decisions/004-kotlin-implementation.md)
-- [Pattern: Q&A Format](../knowledge/patterns/qa-format.md)
-- [Pattern: Code Examples](../knowledge/patterns/code-examples.md)
+## Key Topics Added (2026-04-15)
+- How to manage transaction E2E on EVM Blockchain (Web3j + nonce + gas + receipt)
+- How to test API integration with Blockchain smart contracts (Testcontainers + Foundry)
+- What happens when a transaction is reverted
+- How to design a queryable RESTful API
+- What happens with Java thread contention
+- How to handle 10,000 requests in a Java microservice
+- How to avoid race conditions in distributed environments
 
 ## Status
-- **Created**: 2026-01-19 (Phase: Intent)
 - **Status**: Active
-- **Note**: Generated from existing codebase analysis
+- **Last updated**: 2026-04-15
+- **Format**: Markdown, English, Mermaid diagrams
