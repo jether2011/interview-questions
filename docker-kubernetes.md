@@ -15,6 +15,8 @@
 
 ## Docker Internals
 
+Docker solves the "works on my machine" problem by packaging the application, its runtime, libraries, and configuration into a single portable **image**. At runtime, Docker creates a **container** — an isolated process on the host OS, sharing the host kernel but with its own filesystem, network stack, and process space. This isolation is achieved through Linux kernel primitives (namespaces and cgroups) rather than hardware virtualization, making containers start in milliseconds and consume megabytes rather than gigabytes. The layered filesystem (OverlayFS) is what makes image builds fast: unchanged layers are reused from cache.
+
 **Docker** packages an application and all its dependencies into a portable **image** that runs identically in any environment.
 
 ### Container vs VM
@@ -55,6 +57,8 @@ Container: writable layer on top (deleted on container removal)
 ---
 
 ## Dockerfile Best Practices
+
+A poorly written Dockerfile leads to large images (slow to push/pull), slow builds (no cache reuse), security vulnerabilities (running as root), and JVM misconfiguration (reading wrong memory limits). The multi-stage build pattern solves the image size problem: the build stage uses a full JDK but its output is discarded; only the compiled JAR is copied into a lean JRE-only runtime image. **Layer ordering matters for caching**: copy `pom.xml` and download dependencies before copying source code — so a code-only change doesn't invalidate the expensive dependency download layer.
 
 ### Multi-Stage Build (Java Spring Boot)
 
@@ -126,6 +130,8 @@ node_modules/
 
 ## Docker Networking & Storage
 
+Docker's default bridge network gives each container its own virtual NIC and IP, isolated from the host. Containers on the same user-defined bridge network can reach each other by **container name** as a DNS hostname — critical for multi-container setups (app → database). The `host` network mode removes isolation entirely and shares the host's network stack, eliminating NAT overhead (useful for latency-sensitive workloads). For data persistence, **volumes** (Docker-managed) survive container deletion and are portable across machines; **bind mounts** (host path → container path) are simpler for development (live code reload).
+
 ### Network Modes
 
 | Mode | Description | Use Case |
@@ -159,6 +165,8 @@ docker run -v $(pwd)/src:/app/src my-app  # bind mount for dev
 ---
 
 ## Kubernetes Architecture
+
+Kubernetes automates the deployment, scaling, and self-healing of containerized applications. Its control plane maintains the **desired state** (what you declared in YAML) and continuously reconciles it with **actual state** (what's running on nodes). The API Server is the single gateway to the cluster — all tools (kubectl, CI/CD, controllers) communicate through it. `etcd` is the ground truth — the entire cluster state is stored there. Worker nodes run the actual containers, with `kubelet` ensuring pods match their specification and `kube-proxy` maintaining network rules for Services. Understanding this separation (control plane vs data plane) is fundamental.
 
 ```mermaid
 flowchart TD
@@ -202,6 +210,8 @@ flowchart TD
 ---
 
 ## Workloads & Services
+
+Kubernetes provides specialized workload types for different scenarios. A **Deployment** manages stateless replicas — it handles rolling updates, rollbacks, and automatic rescheduling if a pod fails. A **StatefulSet** is for stateful applications (databases, Kafka) — it assigns stable pod names, stable DNS entries, and dedicated persistent volumes that survive pod restarts. Choosing the wrong type is a common mistake: running a database as a Deployment means it might be rescheduled to a different node and lose its data. **Services** are the stable virtual IPs and DNS names that abstract over the ephemeral pod IPs that change on every restart.
 
 ### Deployment (stateless apps)
 
@@ -319,6 +329,8 @@ spec:
 
 ## Configuration & Secrets
 
+Kubernetes separates configuration from the container image (12-factor app principle). `ConfigMap` stores non-sensitive key-value pairs; `Secret` stores sensitive data base64-encoded (note: base64 is *encoding*, not *encryption* — anyone with cluster access can decode it). For true secrets management in production, use **External Secrets Operator** to sync from AWS Secrets Manager, HashiCorp Vault, or GCP Secret Manager into Kubernetes Secrets. Secrets can be injected as environment variables or mounted as files — file mounting is preferable because the app can detect changes without restarting.
+
 ```yaml
 # ConfigMap — non-sensitive configuration
 apiVersion: v1
@@ -372,6 +384,8 @@ spec:
 ---
 
 ## Scaling, Health & Scheduling
+
+Kubernetes scaling and health management are tightly coupled. The **HPA** watches metrics (CPU, memory, custom metrics via KEDA) and adjusts replica count automatically. But scaling is only effective if **readiness probes** correctly reflect when a pod is ready to serve traffic — a pod that's starting up but not yet warm should not receive requests. **Liveness probes** detect a deadlocked or corrupted process and trigger a restart. **Resource requests and limits** are the foundation: requests enable the scheduler to make intelligent placement decisions; limits prevent one runaway pod from starving its neighbors.
 
 ### Horizontal Pod Autoscaler (HPA)
 
@@ -487,6 +501,8 @@ tolerations:
 
 ## Kubernetes Networking & Ingress
 
+Kubernetes networking has a flat model: every pod gets its own IP and can reach any other pod directly, regardless of which node it's on. This is implemented by a **CNI plugin** (Calico, Flannel, Cilium). **Services** abstract over pod IPs with a stable virtual IP (ClusterIP), load-balanced across healthy pods. **Ingress** exposes Services to external traffic with path-based routing and TLS termination — it requires an **Ingress Controller** (nginx, Traefik, AWS ALB) to actually implement it. **NetworkPolicy** adds firewall rules at the pod level — by default all pods can talk to all pods, which is a security risk in production.
+
 ### Service DNS
 
 Every Service gets a DNS entry: `<service>.<namespace>.svc.cluster.local`
@@ -554,6 +570,8 @@ spec:
 ---
 
 ## Helm & Service Mesh
+
+**Helm** is the package manager for Kubernetes — it templates YAML manifests with Go templating and values files, making it possible to deploy the same application to dev/staging/prod with different configurations by overriding values. A **service mesh** (Istio, Linkerd) injects a sidecar proxy (Envoy) into every pod, creating a transparent network layer that handles mTLS, canary traffic splitting, circuit breaking, and distributed tracing — all without any application code changes. The trade-off: service meshes add operational complexity and latency (sidecar processing). Worth it for large microservices systems needing strong security and observability.
 
 ### Helm
 

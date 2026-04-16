@@ -17,6 +17,8 @@
 
 ## Advantages of Microservices
 
+Microservices decompose a large system into small, independently deployable services — each owning its domain, its data, and its deployment pipeline. The main gains are organizational as much as technical: Conway's Law states that systems mirror the communication structure of the teams that build them. Small teams with clear boundaries ship faster. But microservices are not a silver bullet — they introduce distributed systems complexity (network failures, eventual consistency, distributed tracing) that a monolith simply doesn't have. Choose them when the team and operational maturity justify it.
+
 | Advantage | Detail |
 |---|---|
 | Independent deployment | Each service has its own CI/CD. Ship `OrderService` without touching `UserService`. |
@@ -38,6 +40,8 @@
 ---
 
 ## Service Discovery
+
+In a dynamic environment (containers starting and stopping, auto-scaling, rolling deployments), IP addresses and ports change constantly. Service discovery solves this by having each service register itself with a registry on startup and deregister on shutdown. The caller queries the registry for current instances instead of a hardcoded IP. *Client-side* discovery (Eureka + Ribbon/Spring Cloud LoadBalancer) puts the routing logic in the client; *server-side* discovery (AWS ALB, Kubernetes Service) puts it in the infrastructure.
 
 Without service discovery, services hardcode each other's IPs — brittle and unmanageable.
 
@@ -85,6 +89,8 @@ Client calls stable DNS name → Load Balancer queries registry → routes to he
 ---
 
 ## API Gateway
+
+An API Gateway solves the problem of exposing many internal services to external clients. Without it, clients must know the address of every service, handle auth for each, and deal with CORS from multiple origins. The gateway centralizes cross-cutting concerns: authentication/authorization (validate JWT once, forward user context downstream), rate limiting, request routing, SSL termination, request/response transformation, and observability. It's the boundary between the public internet and the internal service mesh.
 
 The API Gateway is the **single entry point** for all external traffic.
 
@@ -146,6 +152,8 @@ spring:
 
 ## Auto-scaling & New Instance Detection
 
+Auto-scaling is what makes microservices truly elastic. When traffic spikes, the orchestration platform (Kubernetes HPA or AWS Auto Scaling) creates new instances — but those instances are worthless unless traffic actually reaches them. The mechanism that makes this seamless is the combination of service registration (the new instance announces itself), health checking (the registry validates it's ready), and cache refresh (the gateway or load balancer picks it up within seconds). Understanding this flow is critical for designing zero-downtime deployments.
+
 **Question: "5 microservices running. We deploy one more instance of `order-service`. How does the system detect it and route traffic without client-side changes?"**
 
 ```mermaid
@@ -186,6 +194,8 @@ Zero manual configuration needed for new services.
 ---
 
 ## Communication Patterns
+
+Choosing the right communication pattern is one of the most consequential microservices decisions. Synchronous patterns (REST, gRPC) are simple and give immediate feedback, but create **temporal coupling** — both services must be up simultaneously. Asynchronous patterns (Kafka, SQS) decouple services in time but introduce eventual consistency and require more careful error handling. A pragmatic rule: use synchronous for read queries and user-facing operations where you need an immediate response; use async messaging for state-changing events that can be processed independently.
 
 ```mermaid
 flowchart LR
@@ -230,9 +240,11 @@ class PaymentFallback implements PaymentClient {
 
 ## Resilience Patterns
 
+In microservices, one slow or failing service can exhaust the thread pool of its callers — triggering a cascade failure that brings down the entire system. Resilience patterns break this cascade. The Circuit Breaker detects repeated failures and "trips open" — immediately rejecting calls with a fallback instead of queuing up slow requests. Bulkhead isolates dependencies into separate thread pools. Retry with jitter handles transient failures. Together, they implement the key principle: *fail fast and degrade gracefully*.
+
 ### Circuit Breaker
 
-Prevents cascade failures by stopping calls to a failing service.
+Prevents cascade failures by stopping calls to a failing service. The state machine has three states: **Closed** (normal operation, calls pass through), **Open** (calls fail immediately with fallback — no load on the downstream service), and **Half-Open** (probe requests to test if downstream recovered).
 
 ```mermaid
 stateDiagram-v2
@@ -304,6 +316,8 @@ feign:
 
 ## Data Management
 
+The "database per service" rule is the heart of microservices data independence. If two services share a database, they implicitly share their deployment — a schema change in one service can break the other, and you can't independently scale or evolve them. The trade-off is that cross-service queries become expensive (API composition) and you lose ACID transactions across service boundaries (requiring Saga). Embrace denormalization: it's acceptable, even necessary, to store the same field in multiple services' databases.
+
 ### Database per Service
 
 ```mermaid
@@ -345,6 +359,8 @@ public class OrderDashboardService {
 ---
 
 ## Saga Pattern
+
+When a business operation spans multiple services (e.g., placing an order involves payment, inventory, and shipping), you can't use a single ACID transaction — each service owns its own database. The Saga pattern solves this by decomposing the operation into a sequence of local transactions, each publishing an event or sending a command. If any step fails, compensating transactions undo the previous steps. **Choreography** distributes the logic across services via events; **orchestration** centralizes it in a coordinator. Both have trade-offs in visibility and coupling.
 
 Manages distributed transactions across multiple services **without a 2-phase commit lock**.
 
@@ -403,6 +419,8 @@ sequenceDiagram
 
 ## CQRS & Event Sourcing
 
+CQRS recognizes that read and write workloads have fundamentally different characteristics. Writes need strong consistency, validation, and transactional integrity. Reads need fast, flexible queries — often joins across multiple entities. By separating them into distinct models (and optionally distinct services and databases), each can be optimized independently. Event Sourcing takes this further: instead of storing the *current state*, you store the full *history of events*. State becomes a projection — a view derived by replaying events. This gives you a complete audit log, time-travel queries, and the ability to build new read models retroactively.
+
 ### CQRS — Command Query Responsibility Segregation
 
 Separate the **write model** (commands) from the **read model** (queries). Different optimizations for each.
@@ -458,6 +476,8 @@ public class BankAccount {
 
 ## Distributed Tracing & Observability
 
+In a microservices system, a single user request may touch 10 services. When something goes wrong — high latency, an error, a partial failure — you need to trace the full request journey across all services. This is the problem distributed tracing solves. A `traceId` is generated at the entry point (API Gateway) and propagated through every service via HTTP headers or Kafka message headers. Each service creates a `span` — a timed unit of work — and reports it to a trace aggregator (Jaeger, Zipkin). Combined with structured logs and Prometheus metrics, the three pillars give you full observability.
+
 **Three pillars:**
 - **Metrics** — aggregated numbers (Prometheus + Grafana)
 - **Logs** — timestamped events (ELK stack, CloudWatch)
@@ -500,6 +520,8 @@ log.info("Order created",
 ---
 
 ## Security in Microservices
+
+Security in microservices is layered: the API Gateway is the public boundary that handles TLS termination, JWT validation, and rate limiting. Inside the cluster, services communicate over a private network — but you still need service-to-service authentication (mTLS, handled by a service mesh like Istio) to prevent a compromised internal service from calling others freely. At the application layer, `@PreAuthorize` scopes permissions to the operation. Secrets (DB passwords, API keys) must never be in code or ConfigMaps — use a secrets manager and rotate regularly.
 
 ```mermaid
 flowchart LR

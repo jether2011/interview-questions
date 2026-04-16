@@ -18,6 +18,8 @@
 
 ## Kotlin vs Java
 
+Kotlin is a statically typed JVM language designed to be a more concise, safe, and expressive alternative to Java. It compiles to JVM bytecode, making it fully interoperable with Java — you can call Java libraries from Kotlin and vice versa with no overhead. Kotlin's key improvements over Java: null safety baked into the type system (eliminates NPEs at compile time), data classes that auto-generate boilerplate, extension functions that add behavior to existing classes without inheritance, and coroutines for lightweight concurrency. For backend development, Kotlin integrates seamlessly with Spring Boot and is the language of choice for Android development.
+
 | Feature | Kotlin | Java |
 |---|---|---|
 | Null safety | Built-in (`?` types) | `Optional` / prone to NPE |
@@ -36,6 +38,8 @@ Kotlin compiles to JVM bytecode → 100% Java interoperable. No runtime overhead
 ---
 
 ## Type System & Null Safety
+
+Kotlin's type system distinguishes nullable types (`String?`) from non-null types (`String`) at compile time. Attempting to dereference a nullable reference without a null check is a compile error — not a runtime crash. This eliminates an entire class of `NullPointerException` bugs that plague Java codebases. The three operators `?.` (safe call), `?:` (Elvis/default), and `!!` (non-null assertion — throws NPE if null) give you fine-grained control over null handling. The `!!` operator is a code smell in most contexts — if you find yourself using it, consider whether a design change (returning `Optional` or throwing a specific exception earlier) would be cleaner.
 
 ### Nullable Types
 
@@ -104,6 +108,8 @@ val x: String = when (status) {
 ---
 
 ## Classes & Objects
+
+Kotlin's class system reduces boilerplate dramatically while adding powerful features. **Data classes** auto-generate `equals`, `hashCode`, `toString`, and `copy` — replacing 50+ lines of Java boilerplate with one line. **Sealed classes** define closed type hierarchies where all subclasses are known at compile time, enabling exhaustive `when` expressions without a default branch (the compiler enforces completeness). **Object declarations** create thread-safe singletons with no boilerplate. **Companion objects** provide static-like behavior while still having access to class internals. Classes are `final` by default in Kotlin — you must explicitly mark them `open` to allow subclassing (a better default than Java's implicit extensibility).
 
 ### Data Classes
 
@@ -228,6 +234,8 @@ var name: String by Delegates.observable("initial") { _, old, new ->
 
 ## Functions & Lambdas
 
+Kotlin treats functions as first-class citizens — they can be stored in variables, passed as arguments, and returned from other functions. **Extension functions** let you add methods to existing classes (even Java classes like `String` or `List`) without modifying them or using inheritance — enabling fluent, expressive APIs. **Default parameters** eliminate the need for multiple overloaded methods. **Named arguments** make call sites self-documenting. **Inline functions** eliminate the lambda object allocation overhead by copying the function body to the call site — critical for performance-sensitive higher-order functions. **Tail recursion** (`tailrec`) lets the compiler optimize recursive functions into iterative loops.
+
 ### Function Flavors
 
 ```kotlin
@@ -296,6 +304,8 @@ tailrec fun factorial(n: Long, acc: Long = 1): Long =
 
 ## Scope Functions
 
+Scope functions (`let`, `run`, `apply`, `also`, `with`) are Kotlin's way of executing a block of code in the context of an object. They differ along two axes: *how you refer to the object inside the block* (`it` vs `this`) and *what they return* (the lambda result vs the receiver object). Getting them right makes code more readable and idiomatic; getting them wrong adds confusion. The practical rules: use `apply` to configure/build an object (returns the object); use `let` for null-safe operations and transformations (returns the result); use `also` for side effects that don't change the chain (logging, auditing); use `run` when you need both `this` as the receiver AND want to return a result.
+
 | Function | Receiver | Returns | Use Case |
 |---|---|---|---|
 | `let` | `it` | Lambda result | Null-safe block, transform |
@@ -337,6 +347,8 @@ with(printer) {
 ---
 
 ## Collections & Sequences
+
+Kotlin's standard library provides a rich collection of functional operators on top of Java's collection types. The key design choice: Kotlin separates **read-only views** (`List`, `Set`, `Map`) from **mutable collections** (`MutableList`, `MutableMap`). This makes intent explicit — a function returning `List<T>` signals that callers shouldn't mutate it. **Sequences** are the lazy counterpart to collections: each element passes through the entire pipeline before the next element begins, avoiding intermediate lists. Use sequences when chaining multiple operations on large collections (10k+ elements) to avoid creating multiple intermediate copies in memory.
 
 ### Immutable vs Mutable
 
@@ -411,6 +423,8 @@ val fibs = generateSequence(Pair(0L, 1L)) { (a, b) -> Pair(b, a + b) }
 ---
 
 ## Coroutines
+
+Coroutines are Kotlin's solution to asynchronous programming — lightweight cooperative threads managed by the Kotlin runtime rather than the OS. A `suspend` function can pause its execution (suspending the coroutine) and release the underlying thread to do other work, resuming later when the result is ready. This makes it possible to write sequential-looking code that is actually non-blocking. The key shift from thread-based concurrency: you think in terms of *coroutines* (thousands of them) sharing a small thread pool, rather than threads (expensive). **Structured concurrency** ensures no coroutine leaks: child coroutines are always linked to a parent scope, and cancellation propagates down the hierarchy.
 
 ### Why Coroutines?
 
@@ -530,6 +544,8 @@ val result = withTimeoutOrNull(5000) { fetchLargeData() }  // returns null on ti
 
 ## Kotlin Flow
 
+Kotlin Flow is the coroutine-native solution for reactive streams — a type-safe, backpressure-aware, asynchronous sequence of values. **Cold flows** (`flow { }`) don't execute until a terminal operator (`collect`) is called — each collector gets its own independent execution. **Hot flows** (`StateFlow`, `SharedFlow`) are always active regardless of collectors, making them suitable for sharing state across multiple subscribers. The distinction matters: cold flow is like a function (execute on demand), hot flow is like a broadcast radio (always transmitting, tune in when ready). Flow integrates naturally with coroutines and supports all standard operators (`map`, `filter`, `flatMapMerge`, `catch`, `onEach`).
+
 Flow is a cold, asynchronous stream of values — like a suspend version of Sequence.
 
 ### Cold Flow
@@ -610,6 +626,8 @@ combine(flow1, flow2) { a, b -> a + b }.collect { ... }
 
 ## Generics & Advanced Types
 
+Kotlin's generics system adds **declaration-site variance** — a significant improvement over Java's use-site variance (`? extends` / `? super`). In Kotlin, you declare variance at the class definition: `out T` means the class only *produces* T (covariant, like `List<T>`); `in T` means it only *consumes* T (contravariant, like `Comparator<T>`). The `reified` keyword (only in `inline` functions) allows accessing the actual type at runtime — eliminating the need for `Class<T>` parameters in many generics-based APIs. **Type aliases** improve readability without runtime overhead. **Value classes** wrap a primitive with a domain-specific type, catching errors at compile time with zero runtime cost.
+
 ### Generics: in/out (Variance)
 
 ```kotlin
@@ -674,6 +692,8 @@ getUser(42)          // ❌ compile error
 
 ## Java Interoperability
 
+One of Kotlin's strongest selling points is seamless Java interoperability — you can use any Java library, framework, or codebase from Kotlin with no wrappers or bridges. The interoperability goes both ways: Kotlin code is callable from Java, though some Kotlin features (companion objects, default parameters, top-level functions) require specific annotations (`@JvmStatic`, `@JvmOverloads`, `@JvmField`) to expose a Java-friendly API. The trickiest interop issue is **platform types**: Java doesn't have nullable types, so Kotlin treats Java references as `T!` (unknown nullability) — you must handle potential nulls defensively.
+
 ### Calling Java from Kotlin
 
 ```kotlin
@@ -729,6 +749,8 @@ val result = stream.filter { it.startsWith("A") }.collect(toList())
 ---
 
 ## Testing in Kotlin
+
+Kotlin's testing story is excellent. **MockK** is the Kotlin-native mocking library — it understands Kotlin idioms like data classes, extension functions, and suspend functions that Mockito struggles with. The backtick test name syntax (`fun \`create order returns saved order\`()`) makes test names self-documenting English sentences. **`runTest`** from `kotlinx-coroutines-test` provides a controlled time environment for coroutine tests — `advanceUntilIdle()` fast-forwards time so you don't wait for real delays. **`coEvery`/`coVerify`** are the MockK equivalents of `every`/`verify` for suspend functions.
 
 ### JUnit 5 + Kotlin
 
@@ -801,6 +823,8 @@ class FlowTest {
 ---
 
 ## Best Practices
+
+These Kotlin best practices distill the key idioms that distinguish experienced Kotlin developers from Java developers writing Kotlin syntax. The core theme is *leveraging the type system* to catch mistakes at compile time rather than runtime: `val` over `var` (immutability prevents state mutation bugs), sealed classes over nullable returns (forces callers to handle error cases), and value classes over raw primitives (prevents passing the wrong ID type). Extension functions keep utilities close to the type they operate on without inheritance. These patterns not only write cleaner code — they communicate your Kotlin fluency clearly in a senior interview.
 
 ### Prefer Immutability
 

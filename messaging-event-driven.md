@@ -14,6 +14,8 @@
 
 ## Core Concepts
 
+Understanding the vocabulary of event-driven architecture is essential before diving into implementation. A **command** is a request to do something — it can be rejected. An **event** is a statement that something *already happened* — it's an immutable fact. This distinction changes how you design systems: commands are targeted at one receiver (the one responsible for executing it), while events are broadcast — any interested consumer can react. The third primitive, **query**, carries no side effects and is used in the Request/Reply pattern. Getting these right determines whether your architecture communicates intent clearly.
+
 ### Commands vs Events
 
 | | Command | Event |
@@ -58,6 +60,8 @@ flowchart LR
 
 ## Message Queues vs Event Brokers
 
+The fundamental difference between a message queue (RabbitMQ, SQS) and an event broker (Kafka, Kinesis) is **retention**. In a queue, messages are deleted after a consumer acknowledges them — they're transient task dispatchers. In an event broker, events are written to a durable, ordered log and retained for a configurable period (hours, days, or forever). This retention enables **replay** (a new service can re-read all historical events), **multiple consumer groups** (each reading independently at their own pace), and **time-travel debugging**. Choose a queue when you need simple task distribution; choose Kafka when events are the source of truth.
+
 | Feature | RabbitMQ / SQS | Apache Kafka |
 |---|---|---|
 | Storage model | Message deleted after consumption | Retained log (configurable TTL or size) |
@@ -75,6 +79,8 @@ flowchart LR
 ---
 
 ## Kafka Deep Dive
+
+Kafka's architecture is built around three key ideas. First, **topics are split into partitions** — each partition is an ordered, append-only log that can be hosted on a different broker, enabling horizontal scaling. Second, **consumer groups** allow the same topic to be consumed by multiple independent logical consumers simultaneously, each maintaining its own offset. Third, **replication** (ISR — In-Sync Replicas) ensures durability: a message is only acknowledged to the producer after all in-sync replicas have written it. Together these make Kafka both highly available and scalable.
 
 ### Architecture
 
@@ -205,6 +211,8 @@ try {
 
 ## Delivery Guarantees & Idempotency
 
+Understanding delivery guarantees is critical for building reliable event-driven systems. **At-most-once** (commit offset before processing) risks losing messages on crash — acceptable for metrics or logs. **At-least-once** (commit after processing) may duplicate — acceptable for most business events if consumers are idempotent. **Exactly-once** is achievable with Kafka transactions but adds complexity and latency. In practice, the standard production approach is **at-least-once delivery + idempotent consumer** — simpler than exactly-once, and idempotency protects against duplicates naturally.
+
 | Guarantee | How | Risk | Use Case |
 |---|---|---|---|
 | At-most-once | Commit offset before processing | Message loss on crash | Metrics, logs where loss is acceptable |
@@ -248,6 +256,8 @@ Server: stores (idempotency_key → response) in Redis/DB
 ---
 
 ## Schema Management
+
+In event-driven systems, the producer and consumer are decoupled in time — they may not even be deployed together. This makes **schema management** critical: if a producer changes the event structure without coordination, it can silently break consumers that are still running the old version. Schema Registry solves this by acting as a central contract repository. Before publishing, the producer registers its schema and gets a `schema_id`. The message payload includes this ID (4 bytes prefix). Consumers fetch the schema by ID and deserialize accordingly. **Avro** is the standard format — compact binary, schema embedded in the registry, not in every message.
 
 ### Schema Registry (Confluent / AWS Glue)
 
@@ -296,6 +306,8 @@ sequenceDiagram
 ---
 
 ## Event-Driven Patterns
+
+Event-driven patterns exist to solve specific, recurring problems in distributed systems. The **Outbox Pattern** solves dual-write atomicity (DB + Kafka). **Saga** solves distributed transactions without 2PC. **Claim Check** solves Kafka's message size limit for large payloads. **DLQ** handles poison messages that keep crashing consumers. **Event Sourcing** stores history instead of current state. **CQRS** separates writes from reads. Knowing *which pattern* solves *which problem* — and their trade-offs — is the mark of a senior engineer.
 
 ### Outbox Pattern (Dual-Write Problem)
 
@@ -464,6 +476,8 @@ Write side optimized for consistency; read side optimized for query performance.
 
 ## EDA in Microservices
 
+Event-driven architecture changes the coupling model between microservices. With synchronous REST calls, services are **temporally coupled** — both must be available at the same time, and slowness in one propagates to the other. With async events, the producer publishes and moves on — the consumer processes at its own pace, even if it's down momentarily (it catches up when it recovers). This autonomy is powerful, but requires careful design: correlation IDs for tracing, consumer lag monitoring, and backpressure strategies when consumers fall behind.
+
 ### Inter-Service Communication Comparison
 
 | Aspect | REST / gRPC (Sync) | Kafka (Async) |
@@ -521,6 +535,8 @@ public void processBatch(List<ConsumerRecord<String, Event>> records,
 ---
 
 ## EDA Design Principles
+
+These principles encode lessons learned from building real event-driven systems at scale. They're not rules to follow blindly, but heuristics that prevent the most common failure modes: events that break consumers on schema change, consumers that process the same event twice with different outcomes, and workflows where a mid-chain failure leaves state inconsistent. Mastering these shows that you understand not just the tools (Kafka, Schema Registry) but the *engineering discipline* required to make event-driven architecture reliable.
 
 **1. Events are facts — immutable and in past tense.**  
 Name: `OrderShipped`, not `ShipOrder`. Never mutate published events.

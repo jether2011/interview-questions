@@ -37,6 +37,8 @@
 
 ## OOP — 4 Pillars
 
+The four pillars are the foundation of object-oriented design. Encapsulation protects internal state from invalid modification. Inheritance shares common behavior through hierarchies (use sparingly — prefer composition). Polymorphism allows the same interface to drive different behaviors at runtime, making code extensible without modification. Abstraction hides implementation details behind contracts, so callers depend on *what* a class does, not *how*. Together, they enable code that's modular, testable, and open for extension.
+
 ### Encapsulation
 Bundle data + behavior; hide internal state via access modifiers. Expose only what's needed.
 
@@ -91,6 +93,8 @@ public interface PaymentGateway {
 
 ## Polymorphism
 
+Polymorphism means "many forms" — the same operation behaves differently based on the actual type. Static polymorphism (overloading) is resolved at compile time based on the declared parameter types. Dynamic polymorphism (overriding) is resolved at runtime based on the actual object type — this is what enables the Open/Closed Principle: you can add new behavior (new subclass) without changing existing code that uses the base reference.
+
 Two forms:
 
 **Static (Compile-time) — Method Overloading:** same method name, different parameter signatures.
@@ -137,6 +141,8 @@ public void processAll(List<Animal> animals) {
 
 ## Loose Coupling
 
+Coupling measures how much one class knows about another. Tight coupling creates a chain reaction: changing one class forces changes in all dependent classes. Loose coupling breaks this by introducing an abstraction (interface) between collaborators — the caller only knows the contract, not the implementation. This is what makes code testable (inject a mock), swappable (change DB without touching business logic), and independently deployable (microservices communicate via API contracts).
+
 **Tight coupling:** a class directly depends on a concrete implementation. Changing the dependency requires changing the caller.
 
 **Loose coupling:** depend on abstractions (interfaces). The caller doesn't know or care which implementation it gets.
@@ -175,6 +181,8 @@ class OrderService {
 
 ## Multiple Inheritance — Why Java Doesn't Support
 
+Multiple inheritance of classes was deliberately omitted from Java to avoid the **Diamond Problem** — an inherent ambiguity that arises when a class inherits from two parents that both define the same method. C++ allows it but requires explicit disambiguation, which adds cognitive overhead and bugs. Java's solution is clean: a class inherits implementation from *one* parent (via `extends`), but can fulfill multiple *contracts* (via `implements`). Java 8 default methods reopened a limited form of multiple inheritance for behavior, with the rule that the implementing class must explicitly resolve conflicts.
+
 Java does **not** allow a class to extend more than one class because of the **Diamond Problem**.
 
 ```
@@ -194,6 +202,8 @@ The compiler cannot deterministically decide — this creates ambiguity. Languag
 ---
 
 ## Abstract Class vs Interface
+
+Use an **abstract class** when you have shared state (instance fields) or a partial implementation that subclasses should inherit and extend. Use an **interface** when you want to define a capability contract that unrelated classes can implement — a class can implement multiple interfaces but extend only one abstract class. Since Java 8, interfaces can have `default` methods (implementations), blurring the line; the key remaining differences are: interfaces can't have instance state, and a class can only extend one class but implement many interfaces.
 
 | | Abstract Class | Interface |
 |---|---|---|
@@ -233,6 +243,8 @@ interface Auditable {
 
 ## ArrayList vs LinkedList
 
+The answer to "which is faster?" depends entirely on the operation. `ArrayList` is backed by a contiguous array — index access (`get(i)`) is O(1) and CPU cache-friendly because elements are adjacent in memory. `LinkedList` is a doubly-linked list — each node holds data plus two pointers, scattered across the heap. Despite theoretical O(1) insertion at both ends, `LinkedList` is almost always slower in practice due to poor cache locality and pointer-chasing overhead. **Default choice is always `ArrayList`** — only reach for `LinkedList` when you truly need constant-time queue/deque operations at both ends.
+
 | Operation | ArrayList | LinkedList |
 |---|---|---|
 | `get(index)` | **O(1)** — direct array offset | O(n) — traverse from head |
@@ -260,6 +272,8 @@ taskQueue.pollLast();               // O(1) remove from end
 
 ## HashSet vs TreeSet
 
+Both implement `Set` (no duplicates), but with very different trade-offs. `HashSet` uses a `HashMap` internally — O(1) average for add/contains/remove, but no ordering. `TreeSet` uses a Red-Black Tree (`TreeMap`) — O(log n) for all operations but maintains natural sort order, enabling range queries (`headSet`, `tailSet`, `subSet`). A third option, `LinkedHashSet`, provides O(1) operations with **insertion-order iteration** — useful when you need a fast, ordered-by-insertion unique collection. Choose based on whether you need ordering and what kind.
+
 | | HashSet | TreeSet |
 |---|---|---|
 | Backed by | `HashMap` | `TreeMap` (Red-Black Tree) |
@@ -286,6 +300,8 @@ sorted.subSet(2, 8);           // [2, 5]
 ---
 
 ## HashMap Internals
+
+HashMap uses a hash table — an array where each slot (bucket) is identified by `hash(key) % capacity`. Collisions (multiple keys mapping to the same bucket) are handled initially with a linked list. When a bucket grows beyond 8 entries, it's converted to a Red-Black Tree for O(log N) worst-case instead of O(N). The load factor (default 0.75) controls when the array is resized — at 75% capacity, the map doubles in size and rehashes all entries. Understanding this helps explain why equals()/hashCode() contracts are critical: a broken hashCode causes keys to land in the wrong bucket, making them unfindable.
 
 **Structure:** Array of `Node<K,V>[]` (buckets). Each bucket is either a linked list or a Red-Black Tree.
 
@@ -327,6 +343,8 @@ class Point {
 
 ## Checked vs Unchecked Exception
 
+Java's exception model distinguishes between failures the caller should anticipate and recover from (checked), and programming bugs that represent incorrect usage (unchecked). Checked exceptions force the caller to make an explicit decision — either handle it or propagate it. Unchecked exceptions (RuntimeException subclasses) are not forced on callers because they typically represent bugs that can't be meaningfully handled at the call site. Modern Java practice tends toward unchecked exceptions for most business logic, wrapping checked exceptions when they cross abstraction boundaries.
+
 | | Checked | Unchecked |
 |---|---|---|
 | Extends | `Exception` | `RuntimeException` (also extends `Exception`) |
@@ -363,6 +381,8 @@ try (InputStream is = new FileInputStream("file.txt");
 ---
 
 ## synchronized
+
+`synchronized` is Java's built-in mutual exclusion mechanism. It guarantees two things: **atomicity** (the block executes as an indivisible unit) and **visibility** (all writes made inside the block are visible to other threads that subsequently acquire the same lock). It's simple to use but inflexible — you can't time out, you can't be interrupted while waiting, and there's no way to have separate read and write locks. For those capabilities, use `java.util.concurrent.locks.ReentrantLock` or `ReadWriteLock`.
 
 `synchronized` acquires an **intrinsic lock (monitor)** on an object. Only one thread can hold it at a time — all others **block** (enter BLOCKED state).
 
@@ -406,6 +426,8 @@ if (lock.tryLock(100, TimeUnit.MILLISECONDS)) {
 
 ## CountDownLatch
 
+`CountDownLatch` is a synchronization barrier that lets a thread (typically main) wait until a set of other threads complete their work. Think of it as a countdown timer: initialize it with N, each worker calls `countDown()` when done, and the waiting thread blocks on `await()` until the count hits zero. It's **one-time use** — the count can't be reset. For a reusable barrier where N threads all wait for each other at the same point repeatedly (like parallel processing phases), use `CyclicBarrier` instead.
+
 `CountDownLatch` blocks one or more threads until a count reaches zero. **One-time use** (cannot be reset).
 
 ```java
@@ -441,6 +463,8 @@ CyclicBarrier barrier = new CyclicBarrier(3, () -> System.out.println("Phase com
 
 ## map() vs flatMap()
 
+`map` transforms each element to exactly one result — it's a 1-to-1 mapping. `flatMap` transforms each element into a *collection of results* and then **flattens** all those collections into a single stream — it's 1-to-many followed by concatenation. The clearest way to remember: if your mapping function returns `Stream<T>`, `Optional<T>`, or `List<T>` and you don't want a `Stream<Stream<T>>` (nested structure), use `flatMap`. The same concept applies to `Optional.flatMap` (avoids `Optional<Optional<T>>`) and reactor's `flatMap` for async composition.
+
 **`map`:** 1-to-1 transformation. Each element → one result. Returns `Stream<R>`.
 
 **`flatMap`:** 1-to-many + **flatten**. Each element → a Stream. All streams concatenated into one. Returns `Stream<R>`.
@@ -474,6 +498,8 @@ Optional<String> result = Optional.of("user")
 
 ## Two Interfaces Same Method
 
+When a class implements two interfaces that declare the same method signature, the outcome depends on whether the methods are abstract or provide `default` implementations. For abstract methods, there's no conflict — the class simply provides one implementation that satisfies both interface contracts simultaneously. For `default` methods, there *is* a conflict because the class would otherwise inherit two implementations; Java forces you to explicitly override and choose (or combine) them. This demonstrates Java's approach to the Diamond Problem for interfaces.
+
 ### If the method is abstract (no default implementation):
 
 ```java
@@ -494,6 +520,8 @@ No ambiguity — the class simply provides one implementation that satisfies bot
 ---
 
 ## Default Method Conflict
+
+Java's default method conflict resolution follows three priority rules, applied in order. First: a concrete class method always wins over any interface default (the class has spoken). Second: a more specific interface wins over a more general one (specialization takes precedence). Third: if neither rule resolves the conflict, the compiler forces you to override the method and choose explicitly using `InterfaceName.super.method()` syntax. This makes the programmer's intent explicit and avoids silent ambiguity.
 
 ### If both interfaces provide a `default` implementation:
 
@@ -519,6 +547,8 @@ class C implements A, B {
 ---
 
 ## Java 8+ Features
+
+Java 8 was a landmark release that brought functional programming idioms to Java. **Streams** enable declarative data processing pipelines — filter, map, collect — without mutable state or explicit loops. **Lambdas** make anonymous functions first-class values, enabling concise callback syntax. **Optional** provides a type-safe way to express "possibly absent" values, replacing null returns. Later versions added **Records** (Java 16) for concise immutable data carriers, **Sealed Classes** (Java 17) for exhaustive type hierarchies with pattern matching, and **Text Blocks** (Java 15) for multiline strings. Understanding which version introduced what is commonly tested in senior interviews.
 
 ### Streams
 ```java
@@ -592,6 +622,8 @@ String json = """
 
 ## equals() & hashCode() Contract
 
+The `equals()`/`hashCode()` contract is one of the most practically important Java contracts to understand. These two methods must be consistent: if `a.equals(b)` returns true, then `a.hashCode()` **must** equal `b.hashCode()`. The reverse is not required (collisions are acceptable). Violating this contract silently breaks `HashMap`, `HashSet`, and `Hashtable` — objects that are "equal" can't be found because they land in different buckets. The classic bug: override `equals` (to define domain equality) but forget `hashCode` — your objects appear equal by `equals` but HashMap treats them as different keys.
+
 **Contract:**
 - If `a.equals(b)` → `a.hashCode() == b.hashCode()` **(REQUIRED)**
 - If `a.hashCode() == b.hashCode()` → `a.equals(b)` **(NOT required — collisions OK)**
@@ -622,6 +654,8 @@ public class Order {
 ---
 
 ## Immutable Classes
+
+Immutable objects are inherently thread-safe because no thread can modify their state — eliminating the entire class of bugs related to shared mutable state. They also make great keys in `HashMap`/`HashSet` (their hash code never changes after insertion), and are safe to share across threads or cache without defensive copying. Java's `String`, `Integer`, `BigDecimal`, `LocalDate`, and all records are immutable. The recipe is consistent: final class, private final fields, no setters, defensive copies of any mutable inputs/outputs, and "modification" methods that return new instances.
 
 An immutable class cannot be changed after construction. Thread-safe by nature.
 
@@ -657,6 +691,8 @@ public final class Money {             // 1. final class (no subclassing)
 ---
 
 ## JVM Memory & GC
+
+Understanding JVM memory helps diagnose production issues. `OutOfMemoryError: Java heap space` → heap is full, likely a memory leak or undersized `-Xmx`. `OutOfMemoryError: Metaspace` → too many classes loaded (check for classloader leaks, dynamic proxy generation). `StackOverflowError` → infinite recursion (too many stack frames). GC pauses are the other key concern: long Stop-the-World pauses cause timeouts and latency spikes. G1 is the default from Java 9 and handles most workloads well. ZGC is the choice for latency-critical services (p99 latency under 1ms even with large heaps).
 
 **JVM Memory Areas:**
 ```

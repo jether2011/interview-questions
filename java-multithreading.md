@@ -20,6 +20,8 @@
 
 ## Thread Lifecycle
 
+Understanding thread states is essential for diagnosing concurrency issues with tools like `jstack` or VisualVM. A thread in BLOCKED state is waiting for a monitor lock (another thread holds `synchronized`). WAITING means it called `wait()`, `join()`, or `park()` — indefinitely waiting for a signal. TIMED_WAITING is similar but with a deadline. High counts of BLOCKED threads in `jstack` output indicate contention on a lock — a classic symptom of thread contention.
+
 ```
 NEW ──► RUNNABLE ──► RUNNING
                         │
@@ -48,6 +50,8 @@ NEW ──► RUNNABLE ──► RUNNING
 
 ## Creating Threads
 
+In practice, you should almost never create raw threads directly. Use the Executor framework (`ExecutorService`, `ThreadPoolExecutor`) or CompletableFuture — they manage thread lifecycle, handle exceptions, and allow proper shutdown. The four methods below exist for historical completeness; method 4 (Executor) is what you use in real code. Java 21's Virtual Threads are the new paradigm for I/O-bound concurrency.
+
 ```java
 // 1. Extend Thread (avoid — ties behavior to threading)
 class MyThread extends Thread {
@@ -73,6 +77,8 @@ Future<Integer> f = executor.submit(() -> computeResult());
 ---
 
 ## synchronized & Locks
+
+`synchronized` is the simplest Java locking mechanism — it ensures mutual exclusion (only one thread executes the block at a time) and memory visibility (changes are flushed to main memory and visible to other threads). However, it has limitations: no timeout, no interruption, and always exclusive (even reads block each other). `ReentrantLock` adds these capabilities. `ReadWriteLock` is the right choice when reads vastly outnumber writes — multiple readers can proceed in parallel, only writers are exclusive.
 
 ### synchronized
 ```java
@@ -135,6 +141,8 @@ finally { rwLock.writeLock().unlock(); }
 
 ## Thread Contention
 
+Thread contention is one of the most common causes of performance degradation in multi-threaded Java applications. It happens when threads spend more time *waiting for a lock* than *doing actual work*. The symptom is counterintuitive: adding more threads makes the system *slower* because the increased competition for the shared resource amplifies contention. The key insight for resolution: make critical sections as short as possible, push I/O outside locks, and prefer lock-free data structures (`ConcurrentHashMap`, `AtomicInteger`) over coarse-grained `synchronized` blocks.
+
 **Thread contention** occurs when multiple threads compete for the same shared resource (lock, I/O, CPU), causing threads to **block and wait**, degrading throughput.
 
 **Symptoms:**
@@ -179,6 +187,8 @@ cache.computeIfAbsent(key, k -> fetchFromDatabase());
 
 ## Java Memory Model (JMM)
 
+Modern CPUs have per-core caches (L1, L2) and can reorder instructions for performance. This means one thread's writes may not be immediately visible to other threads — a counterintuitive source of bugs that are very hard to reproduce. The JMM defines exactly when writes become visible to other threads via the "happens-before" relationship. `volatile` and `synchronized` both establish happens-before guarantees, which is why removing them can introduce subtle visibility bugs that appear only under load.
+
 JMM defines rules for how threads interact with memory. Without it: CPU caches, instruction reordering → visibility bugs.
 
 **Happens-Before guarantee:** if action A happens-before action B, then A's results are visible to B.
@@ -205,6 +215,8 @@ volatile boolean running = true;
 ---
 
 ## volatile & Atomic
+
+`volatile` and atomic classes both address visibility — ensuring a thread sees the most recent value written by another thread — but they solve different problems. `volatile` is appropriate for a simple flag (one writer, many readers) because reads and writes are atomic at the variable level. But `volatile` doesn't help for *compound operations* like `counter++` (read-modify-write), which are three separate operations. For those, use `AtomicInteger`/`AtomicLong` (CAS-based, lock-free) or `LongAdder` (which reduces CAS contention under high load by maintaining per-thread cells).
 
 ### volatile
 - Guarantees **visibility** — writes immediately visible to all threads
@@ -250,6 +262,8 @@ long total = hitCounter.sum();
 ---
 
 ## CountDownLatch, CyclicBarrier, Semaphore, Phaser
+
+The `java.util.concurrent` package provides synchronization primitives for common coordination patterns. `CountDownLatch` is the simplest — a one-time gate that opens when a count reaches zero. `CyclicBarrier` is similar but reusable and symmetric — all participating threads wait for each other, making it ideal for iterative parallel algorithms (map-reduce phases). `Semaphore` is a concurrency throttle — it limits the number of threads that can access a resource simultaneously (think database connection pool, rate limiter). Knowing which to reach for in which scenario is what separates a senior from a junior.
 
 ### CountDownLatch — wait for N events (one-time)
 ```java
@@ -302,6 +316,8 @@ DataBuffer toProcess = exchanger.exchange(new DataBuffer()); // gets filled buff
 ---
 
 ## Executor Framework & Thread Pools
+
+The Executor framework decouples task submission from execution. Instead of managing thread lifecycle manually, you submit tasks (`Runnable` or `Callable`) to a pool and it handles threading. `ThreadPoolExecutor` is the core implementation — understanding its parameters (core size, max size, queue type) is critical for production tuning. An undersized pool with a bounded queue will reject tasks under load; an oversized pool wastes memory and causes context-switch overhead. For I/O-bound workloads in Java 21+, Virtual Threads eliminate pool sizing concerns entirely.
 
 ```java
 // 1. Fixed — N threads. Good for CPU-bound work.
@@ -360,6 +376,8 @@ if (!executor.awaitTermination(60, SECONDS)) {
 
 ## CompletableFuture
 
+`CompletableFuture` is Java's answer to callback-based async programming, offering a fluent API for composing async operations without nested callbacks ("callback hell"). It represents a value that will be available in the future, and provides operators to transform it (`thenApply`), chain dependent async operations (`thenCompose` — the flatMap equivalent), combine two independent futures (`thenCombine`), or wait for all/any of a set (`allOf`/`anyOf`). Critical distinction: `thenApply` runs on the completing thread (possibly the common pool); `thenApplyAsync` explicitly schedules on an executor. Always pass an explicit executor in production — don't share the common ForkJoinPool with application I/O.
+
 Non-blocking async composition without writing callbacks or blocking threads.
 
 ```java
@@ -415,6 +433,8 @@ CompletableFuture.anyOf(primaryFuture, fallbackFuture)
 
 ## Concurrent Collections
 
+Standard Java collections (`ArrayList`, `HashMap`) are not thread-safe — concurrent modification causes `ConcurrentModificationException` or data corruption. `Collections.synchronizedList/Map` wraps them with a single global lock — simple but creates contention. The `java.util.concurrent` package provides purpose-built thread-safe collections that are far more efficient. `ConcurrentHashMap` uses segment-level locking (and CAS in Java 8+) for near-concurrent access. `CopyOnWriteArrayList` creates a fresh copy on every write — ideal when reads vastly outnumber writes (listeners, configuration). `BlockingQueue` is the backbone of producer-consumer patterns.
+
 | Collection | Use case | Key feature |
 |---|---|---|
 | `ConcurrentHashMap` | Concurrent read-heavy map | Segment-level locking; `computeIfAbsent` atomic |
@@ -443,6 +463,8 @@ counters.computeIfAbsent("hits", k -> new AtomicInteger()).incrementAndGet();
 ---
 
 ## Deadlocks
+
+A deadlock is a permanent standstill where a set of threads are each waiting for a resource held by another in the set — forming a cycle of dependency from which no thread can escape. All four Coffman conditions must hold simultaneously for deadlock to occur; breaking any one of them prevents it. In practice, the most effective prevention strategies are: (1) **consistent lock ordering** — always acquire locks in the same global order to eliminate cycles; (2) **tryLock with timeout** — detect and back off rather than wait forever; (3) **avoid holding locks while calling external code** — third-party code may acquire its own locks.
 
 A deadlock occurs when two or more threads each hold a resource the other needs, and neither can proceed.
 
@@ -497,6 +519,8 @@ if (lockA.tryLock(100, MILLISECONDS)) {
 ---
 
 ## Handle 10,000 Requests in a Java Microservice
+
+This is a classic senior interview question that tests your understanding of the C10K problem and modern Java concurrency. The traditional Tomcat thread-per-request model breaks down at scale because OS threads are expensive (~1 MB stack each). Handling 10k concurrent requests with blocking I/O would require 10k threads, consuming 10 GB of RAM just for stacks. The modern answers are: **Virtual Threads** (Java 21, Project Loom) — lightweight JVM-managed threads that block on I/O without tying up an OS thread; **reactive programming** (WebFlux + R2DBC) — event loop with non-blocking I/O; or **horizontal scaling** — stateless service scaled out across multiple instances behind a load balancer.
 
 **The core problem:** traditional thread-per-request model. Each request = 1 OS thread (1-2 MB stack). 10k concurrent = 10-20 GB RAM just for threads + context switching overhead.
 
@@ -588,6 +612,8 @@ Virtual Threads or WebFlux + HikariCP tuning + Redis caching + Horizontal scalin
 ---
 
 ## Race Conditions in Distributed Environments
+
+A race condition in a distributed system is harder to prevent than in a single-process system because you can't use `synchronized` or `AtomicInteger` across service boundaries. Multiple instances of the same service, or multiple different services, may concurrently read-modify-write shared state (a database row, a Redis key, an inventory count). The solutions range from **optimistic locking** (`@Version` in JPA — lightweight, retry on conflict) to **pessimistic locking** (`SELECT FOR UPDATE` — strong, higher contention) to **distributed locks** (Redis Redisson — cross-service, but introduces distributed system complexity). Idempotency keys address the related problem of duplicate API calls causing duplicate side effects.
 
 **Race condition:** two processes read, compute, and write shared state concurrently → corrupted result.
 
@@ -696,6 +722,8 @@ No shared mutable state. All state derived from immutable event log. Each servic
 ---
 
 ## Fork/Join Framework
+
+The Fork/Join framework implements the divide-and-conquer parallel pattern. A large task is recursively split ("forked") into smaller subtasks until each piece is small enough to compute sequentially; results are then merged ("joined") back up the tree. The key innovation is **work-stealing**: idle threads steal tasks from the queues of busy threads, keeping all processors busy without manual load balancing. Java's Parallel Streams use the common `ForkJoinPool` internally. Avoid it for I/O-bound tasks (it blocks carrier threads, defeating the purpose) and be careful with the shared common pool — task blocking in one application can starve another.
 
 Divide-and-conquer for CPU-intensive tasks. Uses work-stealing to keep all threads busy.
 

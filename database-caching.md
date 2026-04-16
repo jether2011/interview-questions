@@ -3,16 +3,20 @@
 ## Table of Contents
 1. [SQL vs NoSQL](#sql-vs-nosql)
 2. [Indexes Deep Dive](#indexes-deep-dive)
-3. [Transactions & Isolation](#transactions--isolation)
-4. [MVCC (Multi-Version Concurrency Control)](#mvcc)
-5. [Sharding & Replication](#sharding--replication)
-6. [Caching Strategies](#caching-strategies)
-7. [Redis Deep Dive](#redis-deep-dive)
-8. [Database Selection Guide](#database-selection-guide)
+3. [Materialized Views & Advanced Views](#materialized-views--advanced-views)
+4. [EXPLAIN & Query Analysis](#explain--query-analysis)
+5. [Transactions & Isolation](#transactions--isolation)
+6. [MVCC & PostgreSQL Concurrency](#mvcc--postgresql-concurrency)
+7. [Sharding & Replication](#sharding--replication)
+8. [Caching Strategies](#caching-strategies)
+9. [Redis Deep Dive](#redis-deep-dive)
+10. [Database Selection Guide](#database-selection-guide)
 
 ---
 
 ## SQL vs NoSQL
+
+Choosing the right database is one of the most consequential architectural decisions. SQL databases model data as related tables and excel at enforcing consistency and answering ad-hoc queries via joins. NoSQL databases sacrifice query flexibility for one of: schema flexibility (MongoDB), massive write throughput (Cassandra), sub-millisecond access (Redis), or graph traversal (Neo4j). In practice, most systems use multiple databases — polyglot persistence — with each database handling the workload it's best at.
 
 | | SQL (Relational) | Document (MongoDB) | Column (Cassandra) | Key-Value (Redis) | Graph (Neo4j) |
 |---|---|---|---|---|---|
@@ -34,6 +38,8 @@
 ---
 
 ## Indexes Deep Dive
+
+An index is a separate data structure that the database maintains to speed up lookups, at the cost of additional storage and slightly slower writes (the index must be updated on every INSERT/UPDATE/DELETE). Without an index on a filter column, the database performs a sequential scan — reading every row. With an index, it can jump directly to the matching rows in O(log N) time. Choosing which columns to index (and in what combination) is one of the most impactful performance tuning activities.
 
 ### B-Tree Index (Default)
 
@@ -121,9 +127,182 @@ WHERE status != 'ARCHIVED';
 -- Smaller, faster, less maintenance overhead
 ```
 
+### Clustered Index (Index-Organized Table)
+
+A **clustered index** (or index-organized table) stores the actual row data *inside* the B-tree leaf nodes, ordered by the index key. There can be only one clustered index per table because the physical row order on disk can only follow one sequence. In MySQL InnoDB, the primary key is always the clustered index. In PostgreSQL, `CLUSTER` reorders heap pages by an index, but it's a one-time operation (not maintained automatically).
+
+```sql
+-- MySQL InnoDB: PRIMARY KEY is always the clustered index
+-- Rows physically stored in PK order → PK lookups = no heap jump needed
+CREATE TABLE orders (
+    id BIGINT PRIMARY KEY,       -- clustered index: row data is HERE in the B-tree
+    customer_id BIGINT,
+    status VARCHAR(20),
+    total DECIMAL(10,2),
+    INDEX idx_customer (customer_id)  -- secondary index: stores PK (id) as pointer to row
+);
+
+-- PostgreSQL: CLUSTER command (one-time physical reorder)
+CLUSTER orders USING idx_orders_created_at;
+-- After CLUSTER: rows on disk are ordered by created_at
+-- Subsequent inserts disrupt order; must CLUSTER again periodically
+-- PROS: range scans on created_at become sequential reads → very fast
+-- CONS: one-time, not maintained; locks table during operation
+```
+
+**Key difference: clustered vs non-clustered:**
+- **Clustered (primary):** leaf node = actual row data. One I/O to get the row.
+- **Non-clustered (secondary):** leaf node = pointer to row (in PostgreSQL, the ctid; in MySQL, the PK value). Two I/Os: index lookup → then row fetch (unless it's a covering index).
+
+---
+
+## Materialized Views & Advanced Views
+
+A **regular view** is a stored query — it executes the underlying query every time you select from it. A **materialized view** pre-computes and stores the query result as a physical table that can be indexed. This trades storage and staleness for dramatically faster reads on complex aggregations, joins, or reporting queries that would otherwise take seconds.
+
+```sql
+-- Regular view: executes the full query on every SELECT
+CREATE VIEW order_summary AS
+SELECT customer_id,
+       COUNT(*)            AS total_orders,
+       SUM(total)          AS total_spent,
+       MAX(created_at)     AS last_order_date
+FROM orders
+GROUP BY customer_id;
+-- SELECT * FROM order_summary WHERE customer_id = 42;
+-- → runs the full GROUP BY on every call (slow for large tables)
+
+-- Materialized view: results stored as a physical table
+CREATE MATERIALIZED VIEW order_summary_mv AS
+SELECT customer_id,
+       COUNT(*)            AS total_orders,
+       SUM(total)          AS total_spent,
+       MAX(created_at)     AS last_order_date
+FROM orders
+GROUP BY customer_id
+WITH DATA;  -- populate immediately
+
+-- Can add indexes on the materialized view!
+CREATE INDEX ON order_summary_mv (customer_id);
+-- Now: SELECT * FROM order_summary_mv WHERE customer_id = 42; → index scan, microseconds
+```
+
+### Refreshing Materialized Views
+
+```sql
+-- Full refresh: recompute entire result (blocks reads during refresh)
+REFRESH MATERIALIZED VIEW order_summary_mv;
+
+-- Concurrent refresh: no read lock (requires a UNIQUE index)
+REFRESH MATERIALIZED VIEW CONCURRENTLY order_summary_mv;
+
+-- Automatic refresh: use a scheduled job or trigger
+-- PostgreSQL doesn't auto-refresh; options:
+-- 1. pg_cron extension: schedule REFRESH on interval
+-- 2. Trigger on base table: AFTER INSERT/UPDATE → REFRESH (careful: expensive if frequent writes)
+-- 3. Application-level: refresh after batch processing, at off-peak hours
+```
+
+### When to Use Materialized Views
+
+| Use Case | Regular View | Materialized View |
+|---|---|---|
+| Simple filter/join used occasionally | ✅ | Overkill |
+| Complex aggregation, used frequently | ❌ Slow | ✅ |
+| Reporting/dashboards with slight staleness OK | ❌ Slow | ✅ |
+| Real-time data required | ✅ (always fresh) | ❌ (stale between refreshes) |
+| Large table joins, analytics | ❌ Very slow | ✅ |
+
+**Practical examples where materialized views shine:**
+- Sales dashboard: total revenue per region per month
+- User activity summaries: messages sent, orders placed (for recommendations)
+- Search-friendly denormalization: pre-join product + category + brand for search index feed
+
+---
+
+## EXPLAIN & Query Analysis
+
+`EXPLAIN` shows the **query execution plan** the database chose — without actually running the query. `EXPLAIN ANALYZE` executes it and shows actual vs estimated row counts and actual timings. This is the primary tool for diagnosing slow queries and verifying that indexes are used.
+
+```sql
+-- EXPLAIN: show plan without executing
+EXPLAIN SELECT * FROM orders WHERE customer_id = 42 AND status = 'PENDING';
+
+-- EXPLAIN ANALYZE: execute + show actual stats (use on non-destructive queries)
+EXPLAIN ANALYZE
+SELECT o.id, o.total, c.name
+FROM orders o
+JOIN customers c ON o.customer_id = c.id
+WHERE o.status = 'PENDING'
+ORDER BY o.created_at DESC
+LIMIT 20;
+```
+
+**Reading EXPLAIN output — what to look for:**
+
+```
+Limit  (cost=0.43..10.52 rows=20 width=48) (actual time=0.082..0.193 rows=20 loops=1)
+  -> Sort  (cost=... rows=1250 ...) (actual ... rows=1250 ...)
+      Sort Key: o.created_at DESC
+      Sort Method: quicksort  Memory: 285kB
+    -> Hash Join  (cost=... rows=1250 ...) (actual ... rows=1250 ...)
+        Hash Cond: (o.customer_id = c.id)
+        -> Index Scan using idx_orders_status on orders o
+              Index Cond: (status = 'PENDING')          ← index used ✅
+              Rows Removed by Filter: 0
+        -> Hash  (cost=... rows=5000 ...)
+            -> Seq Scan on customers c                  ← full scan ⚠️
+```
+
+| Node Type | Meaning | Good/Bad |
+|---|---|---|
+| `Seq Scan` | Full table scan (reads every row) | ⚠️ Bad on large tables |
+| `Index Scan` | Traverses B-tree, fetches rows from heap | ✅ Good for selective queries |
+| `Index Only Scan` | Reads from index only (covering index) | ✅ Best — no heap access |
+| `Bitmap Index Scan` | Uses index to build bitmap, then heap scan | ✅ Good for low-selectivity |
+| `Hash Join` | Build hash table from smaller set, probe with larger | ✅ Good for unsorted joins |
+| `Merge Join` | Join two sorted sets | ✅ Good when both sides sorted |
+| `Nested Loop` | For each row in outer, scan inner | ⚠️ Bad at scale; good with index on inner |
+| `Sort` | In-memory or disk sort | ⚠️ Watch for `Disk: xxxkB` → add index |
+
+**Key columns to check:**
+- `rows=N` (estimated) vs `actual rows=N`: large discrepancy → stale statistics → run `ANALYZE`
+- `cost=X..Y`: startup cost..total cost (planner units, not ms)
+- `actual time=X..Y ms`: real execution time per node
+- `loops=N`: how many times this node was executed (multiply by loops for total)
+
+```sql
+-- Fix stale statistics → recalculate cardinality estimates
+ANALYZE orders;
+ANALYZE customers;
+
+-- Force index use (rarely needed; trust the planner)
+SET enable_seqscan = OFF;  -- test only, not for production
+```
+
+**Common EXPLAIN findings and fixes:**
+
+| Finding | Root Cause | Fix |
+|---|---|---|
+| `Seq Scan` on large table | Missing index on filter column | `CREATE INDEX` |
+| High `rows removed by filter` | Index exists but not selective enough | Composite index or partial index |
+| `Sort` on large dataset | No index matching ORDER BY | Add index on sort column |
+| Estimated vs actual rows mismatch | Stale statistics | `ANALYZE` table |
+| `Nested Loop` with large outer | No index on join column | Index on join column |
+| `Hash Join` taking too long | Hash table spilling to disk | Increase `work_mem` |
+
+```sql
+-- Increase work_mem for expensive sort/hash operations (session-level)
+SET work_mem = '256MB';
+EXPLAIN ANALYZE SELECT ...; -- see if Sort/Hash switches to in-memory
+RESET work_mem;
+```
+
 ---
 
 ## Transactions & Isolation
+
+Transactions group multiple operations into a single atomic unit — either all succeed or all fail. Isolation controls what intermediate state one transaction can see from another that's running concurrently. Higher isolation levels prevent more anomalies but at the cost of more contention (locks or MVCC overhead). The default in most databases (READ COMMITTED) is a practical balance: prevents dirty reads but allows non-repeatable reads, which is acceptable for most web applications.
 
 ### ACID Properties
 
@@ -180,9 +359,9 @@ public void updateStock(Long productId, int delta) {
 
 ---
 
-## MVCC
+## MVCC & PostgreSQL Concurrency
 
-**Multi-Version Concurrency Control** — readers don't block writers, writers don't block readers.
+**Multi-Version Concurrency Control (MVCC)** is PostgreSQL's core concurrency mechanism. Instead of locking rows for reads, it maintains multiple versions of each row — old versions remain visible to transactions that started before the update. This means reads never block writes and writes never block reads, giving very high concurrent throughput. The trade-off is that old row versions accumulate and must be cleaned up by `VACUUM`.
 
 ```
 How PostgreSQL MVCC works:
@@ -203,9 +382,95 @@ TX 102 (started after 101): sees {xmin=101, xmax=null, data="Alice Updated"}
 - Each transaction gets a snapshot at start (READ COMMITTED: per statement; REPEATABLE READ: per transaction)
 - No read locks needed — reads are always consistent without blocking
 
+### PostgreSQL Lock Types
+
+PostgreSQL has multiple lock granularities. Understanding them prevents accidental lock contention in production.
+
+| Lock Mode | Conflicts With | Acquired By |
+|---|---|---|
+| `ACCESS SHARE` | `ACCESS EXCLUSIVE` only | `SELECT` |
+| `ROW SHARE` | `EXCLUSIVE`, `ACCESS EXCLUSIVE` | `SELECT FOR UPDATE` |
+| `ROW EXCLUSIVE` | `SHARE`, `SHARE ROW EXCLUSIVE`, `EXCLUSIVE`, `ACCESS EXCLUSIVE` | `INSERT`, `UPDATE`, `DELETE` |
+| `SHARE` | `ROW EXCLUSIVE` and above | `CREATE INDEX` (non-concurrent) |
+| `EXCLUSIVE` | Everything except `ACCESS SHARE` | Rarely used directly |
+| `ACCESS EXCLUSIVE` | All locks | `DROP`, `TRUNCATE`, `LOCK TABLE` |
+
+**Row-level locks:**
+```sql
+SELECT * FROM orders WHERE id = 1 FOR UPDATE;           -- exclusive row lock (blocks other updates)
+SELECT * FROM orders WHERE id = 1 FOR SHARE;            -- shared row lock (allows other reads)
+SELECT * FROM orders WHERE id = 1 FOR UPDATE SKIP LOCKED; -- skip already-locked rows (queue processing)
+SELECT * FROM orders WHERE id = 1 FOR UPDATE NOWAIT;    -- fail immediately if locked (don't queue)
+```
+
+### Advisory Locks (Application-Level)
+
+Advisory locks are explicit, application-controlled locks not tied to any row or table. They're perfect for distributed coordination tasks like "only one scheduler runs at a time."
+
+```sql
+-- Session-level advisory lock: held until session ends or explicitly released
+SELECT pg_try_advisory_lock(12345);    -- returns true if acquired
+SELECT pg_advisory_unlock(12345);      -- release
+
+-- Transaction-level advisory lock: auto-released on COMMIT/ROLLBACK
+SELECT pg_try_advisory_xact_lock(42); -- returns true if acquired
+
+-- Practical use: distributed cron job — only one instance runs
+-- Each instance tries: SELECT pg_try_advisory_lock(hashtext('daily-report-job'))
+-- Winner runs the job; others skip
+```
+
+### Deadlock Detection in PostgreSQL
+
+PostgreSQL automatically detects deadlocks and kills one of the transactions (the one with less work done). The default deadlock detection timeout is 1 second (`deadlock_timeout`).
+
+```sql
+-- Session 1                        -- Session 2
+BEGIN;                               BEGIN;
+UPDATE accounts SET balance=balance-100 WHERE id=1;
+                                     UPDATE accounts SET balance=balance-50 WHERE id=2;
+UPDATE accounts SET balance=balance+100 WHERE id=2;  -- WAITS for Session 2
+                                     UPDATE accounts SET balance=balance+50 WHERE id=1;  -- WAITS for Session 1
+-- PostgreSQL detects cycle after deadlock_timeout (1s)
+-- Rolls back one transaction with: ERROR: deadlock detected
+```
+
+**Prevention:** always acquire locks in the same order across all code paths.
+
+### VACUUM and Table Bloat
+
+```sql
+-- Check for table bloat (dead tuples)
+SELECT relname, n_dead_tup, n_live_tup,
+       round(n_dead_tup * 100.0 / NULLIF(n_live_tup + n_dead_tup, 0), 2) AS dead_pct
+FROM pg_stat_user_tables
+ORDER BY n_dead_tup DESC;
+
+-- Manual VACUUM (reclaims dead tuple space, updates visibility map)
+VACUUM orders;
+
+-- VACUUM FULL (rewrites table entirely — locks table, frees disk space back to OS)
+VACUUM FULL orders;  -- use only off-hours; causes brief downtime
+
+-- ANALYZE updates statistics used by query planner
+ANALYZE orders;
+
+-- Check autovacuum activity
+SELECT relname, last_autovacuum, last_autoanalyze
+FROM pg_stat_user_tables
+WHERE relname = 'orders';
+```
+
+**When to tune autovacuum aggressively:**
+- Write-heavy tables (high UPDATE/DELETE rate)
+- Large tables where default triggers are too infrequent
+- Tables with visibility map issues (causes sequential scans instead of index-only scans)
+
 ---
 
 ## Sharding & Replication
+
+A single database node has finite resources. Replication creates read replicas that serve SELECT queries, relieving the primary of read pressure while also providing high availability failover. Sharding partitions data horizontally across multiple independent database nodes — each node owns a subset of the data. Replication improves read throughput and availability; sharding improves write throughput and storage capacity. They're complementary: production systems typically run each shard with its own replica set.
 
 ### Replication
 
@@ -273,6 +538,8 @@ public List<Order> findByCustomer(Long customerId) {
 ---
 
 ## Caching Strategies
+
+Caching is a copy of data stored in faster storage to avoid re-computing or re-fetching it. The critical design question is *who is responsible for populating the cache* and *when does the cache become stale*. Cache-aside puts the application in control (explicit load on miss, explicit invalidation on write). Write-through keeps the cache always current but doubles write latency. Write-behind accelerates writes but risks losing un-flushed data. The right choice depends on the consistency requirements and write/read ratio of your use case.
 
 ### Cache-Aside (Lazy Loading) — Most Common
 
@@ -358,6 +625,8 @@ Redis default: **LRU** (configurable per policy).
 ---
 
 ## Redis Deep Dive
+
+Redis is an in-memory data structure server — not just a cache. Its power comes from offering the right data structure for each problem: Strings for counters and simple values, Sorted Sets for leaderboards and rate limiting, Streams for event queues, HyperLogLog for cardinality estimates. All operations are single-threaded (in the command execution layer), which makes them atomic — a critical property for rate limiting, distributed locks, and session management without complex concurrency logic.
 
 ### Data Structures & Use Cases
 

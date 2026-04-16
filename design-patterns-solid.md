@@ -12,6 +12,8 @@
 
 ## SOLID Principles
 
+SOLID is Robert Martin's set of five object-oriented design principles that guide code toward being maintainable, extensible, and testable. They're not independent rules — they reinforce each other. SRP gives each class a single, clear reason to change. OCP ensures that adding features doesn't require modifying existing, tested code. LSP ensures that subtype polymorphism is safe and predictable. ISP keeps interfaces lean so clients don't depend on methods they don't use. DIP inverts the dependency direction so high-level business logic doesn't depend on low-level infrastructure details. Violating any one of them typically makes code brittle, hard to test, and resistant to change.
+
 | Principle | Rule | Violation Sign | Fix |
 |---|---|---|---|
 | **S**RP | One class, one reason to change | Class handles persistence, validation, notification | Split into focused classes |
@@ -145,6 +147,8 @@ class OrderService {
 
 ## Creational Patterns
 
+Creational patterns abstract the instantiation process — they decouple the code that *uses* an object from the code that *creates* it. This matters because object creation often involves decisions (which implementation? which configuration?) that shouldn't pollute business logic. **Singleton** ensures a single shared instance (a natural fit for Spring beans). **Builder** tames complex constructors with many optional parameters. **Factory Method** and **Abstract Factory** let you create objects without knowing their concrete type. **Prototype** efficiently creates copies of expensive-to-initialize objects. In modern Java/Spring code, you'll use Builder most frequently (via Lombok `@Builder`) and Factory Method implicitly through `@Configuration` beans.
+
 ### Singleton
 
 Ensure exactly one instance exists. In Spring, all `@Bean` are singleton by default — **prefer that over manual Singleton**.
@@ -270,6 +274,8 @@ public class DocumentTemplate implements Cloneable {
 
 ## Structural Patterns
 
+Structural patterns deal with how classes and objects are composed to form larger structures. **Adapter** bridges incompatible interfaces — wrapping a class to make it look like something else (e.g., wrapping a third-party payment API to match your internal interface). **Decorator** adds behavior by wrapping an object in another that conforms to the same interface — composable and avoids subclass explosion (Spring's `@Transactional`, `@Cacheable` are implemented as decorators via AOP). **Proxy** controls access to an object — transparent to the caller. **Facade** simplifies a complex subsystem behind a single, clean interface. **Composite** lets you treat individual items and collections uniformly (tree structures like file systems or DOM).
+
 ### Adapter
 
 Convert interface of a class into another interface the client expects.
@@ -394,6 +400,8 @@ class Bundle implements PricingComponent {
 ---
 
 ## Behavioral Patterns
+
+Behavioral patterns focus on communication and responsibility distribution between objects. **Strategy** externalizes an algorithm so it can be swapped at runtime without changing the context class — the primary mechanism behind OCP. **Observer** establishes a publish-subscribe relationship where state changes in one object automatically notify dependents — the backbone of Spring's `ApplicationEvent` and all event-driven designs. **Command** encapsulates a request as an object, enabling queuing, logging, and undo. **Chain of Responsibility** passes a request along a chain of handlers until one handles it (Spring Security filter chain is the textbook example). **Template Method** defines the skeleton of an algorithm in a base class, with specific steps deferred to subclasses.
 
 ### Strategy
 
@@ -602,6 +610,8 @@ class ShippedState implements OrderState {
 ---
 
 ## Enterprise Patterns
+
+Enterprise patterns address the recurring design problems found in business applications: data persistence, complex queries, distributed state, and domain complexity. The **Repository** pattern insulates domain logic from persistence technology — your `OrderService` talks to an `OrderRepository` interface, not to SQL or Hibernate directly. The **Specification** pattern makes complex query criteria composable and reusable. **CQRS** separates read and write paths because they have different optimization needs. **Event Sourcing** stores the history of state changes (events) rather than the current state — enabling full audit logs and temporal queries. These patterns are especially valuable in DDD (Domain-Driven Design) contexts.
 
 ### Repository
 

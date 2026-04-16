@@ -17,6 +17,8 @@
 
 ## What is Spring Boot?
 
+Spring Boot dramatically reduces the configuration overhead of the Spring Framework. Where traditional Spring required hundreds of lines of XML or Java config to set up a DataSource, EntityManager, and TransactionManager, Spring Boot auto-configures them based on what's on the classpath. The embedded server means you deploy a self-contained JAR — no application server needed. This is what makes Spring Boot the dominant choice for building microservices: a new service can be running in minutes with almost no infrastructure configuration.
+
 Spring Boot is an **opinionated, convention-over-configuration** wrapper around the Spring Framework that removes the boilerplate of Spring setup.
 
 **Core features:**
@@ -47,6 +49,8 @@ public class Application {
 
 ## Spring Boot App vs Microservice
 
+"Microservice" is an architectural style, not a framework feature. Any Spring Boot application *could* be a microservice, but simply building it with Spring Boot doesn't make it one. The defining characteristic is **bounded context ownership** — a microservice owns exactly one domain, its schema, and its deployment lifecycle. The practical distinction matters in interviews: understanding *when* to split an application into microservices (team size, scaling needs, domain boundaries) is as important as knowing *how* to build them.
+
 | Aspect | Spring Boot Application | Spring Boot Microservice |
 |---|---|---|
 | Scope | Single deployable (monolith or modular monolith) | One bounded context, one responsibility |
@@ -67,6 +71,8 @@ A microservice **is** a Spring Boot application. A Spring Boot application is **
 ---
 
 ## @Autowired — How it Works Internally
+
+`@Autowired` tells Spring's IoC container to inject a dependency. The container looks up matching beans from its registry and wires them in. Constructor injection is preferred over field injection: it makes dependencies explicit (visible in the constructor signature), allows the class to be instantiated in unit tests without a Spring context (just call `new MyService(mockRepo)`), and prevents circular dependencies from being hidden at runtime. Field injection (`@Autowired` on a field) only works with reflection, making the dependency invisible and testability harder.
 
 `@Autowired` is processed by `AutowiredAnnotationBeanPostProcessor` which runs after bean instantiation.
 
@@ -107,6 +113,8 @@ public class NotificationService {
 ---
 
 ## Spring Bean Lifecycle
+
+Understanding the bean lifecycle is important for two reasons: knowing when your initialization code (`@PostConstruct`) runs (after all dependencies are injected, not at constructor time), and knowing where AOP proxies are created (step 6 — `BeanPostProcessor.postProcessAfterInitialization`). This is why `@Transactional` only works via the Spring proxy — if you call a transactional method from within the same class (self-invocation), you bypass the proxy and the transaction doesn't start.
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
@@ -159,6 +167,8 @@ public class ConnectionPool implements InitializingBean, DisposableBean {
 ---
 
 ## @Transactional
+
+`@Transactional` is one of the most commonly misunderstood Spring annotations. It works by wrapping the bean in an AOP proxy — when you call `service.transfer()` from outside, you're calling the proxy, which begins a transaction, delegates to the real method, then commits or rolls back. Three common gotchas: (1) calling a `@Transactional` method from *within the same class* bypasses the proxy — no transaction; (2) `@Transactional` on `private` methods is silently ignored; (3) by default, only `RuntimeException` triggers rollback — checked exceptions don't unless you set `rollbackFor = Exception.class`.
 
 Spring wraps the annotated method in a **proxy** that manages the transaction lifecycle: begin → method executes → commit (or rollback on exception).
 
@@ -224,6 +234,8 @@ public void save(User user) throws IOException {
 ---
 
 ## JPA and How it Works
+
+JPA abstracts database operations into an object-oriented model — you work with Java objects and JPA/Hibernate translates to SQL. The EntityManager is the heart of JPA: it manages the *first-level cache* (within a transaction, the same entity reference is returned for the same PK — only one DB hit per entity per transaction). Understanding entity lifecycle states is critical for avoiding bugs like the LazyInitializationException (accessing a lazy collection on a detached entity outside a transaction).
 
 **JPA** (Jakarta Persistence API) is a **specification**. **Hibernate** is the main implementation in Spring Boot.
 
@@ -317,6 +329,8 @@ private Customer customer;
 
 ## Spring MVC & REST
 
+Spring MVC maps HTTP requests to Java methods through the `DispatcherServlet`, which acts as a front controller routing each request to the matching `@Controller` or `@RestController`. `@RestController` is shorthand for `@Controller + @ResponseBody` — it serializes the return value directly to JSON/XML instead of resolving a view template. `@RequestMapping` and its aliases (`@GetMapping`, `@PostMapping`, etc.) bind URL patterns and HTTP methods to handler methods. The `@RestControllerAdvice` + `@ExceptionHandler` pattern provides centralized error handling so every controller doesn't need its own try/catch.
+
 ```java
 @RestController
 @RequestMapping("/api/v1/orders")
@@ -383,6 +397,8 @@ public class GlobalExceptionHandler {
 ---
 
 ## Spring Security & OAuth2
+
+Spring Security is a filter chain — each request passes through a sequence of `Filter` instances before reaching the controller. The `SecurityFilterChain` bean configures which filters apply and in what order. In a stateless REST API, you typically disable sessions and CSRF, configure the app as an OAuth2 resource server (validates JWTs), and define authorization rules per path. The key distinction to know: **authentication** (who are you? — OpenID Connect via `id_token`) vs **authorization** (what can you do? — OAuth2 scopes and roles via `access_token`).
 
 ### Role-Based Access Control
 ```java
@@ -458,6 +474,8 @@ sequenceDiagram
 
 ## Spring AOP
 
+AOP (Aspect-Oriented Programming) solves the problem of cross-cutting concerns — behaviors that span many classes (logging, security, metrics, transactions) but don't belong in any one class's business logic. Spring AOP works through **proxy objects**: when you annotate a method with `@Transactional` or `@Cacheable`, Spring wraps your bean in a proxy at step 6 of the bean lifecycle. Calls routed through the proxy trigger the aspect advice before/after/around the real method. This is why self-invocation (`this.method()`) bypasses the proxy — you're calling the real object, not the proxy.
+
 AOP addresses **cross-cutting concerns** (logging, security, transactions, metrics) without scattering them across business logic.
 
 **Core concepts:**
@@ -498,6 +516,8 @@ public class LoggingAspect {
 ---
 
 ## Docker & Deployment (EC2)
+
+A multi-stage Dockerfile is the standard for Spring Boot: the **build stage** uses a full JDK image to compile and package; the **runtime stage** uses a minimal JRE image, discarding the JDK, source, and build tools. This typically cuts image size from 500MB+ to under 200MB. The JVM flags `-XX:+UseContainerSupport` and `-XX:MaxRAMPercentage=75.0` are critical in containerized environments — without them, the JVM reads the host's total RAM instead of the container's memory limit, potentially allocating a 4GB heap in a 512MB container (causing OOMKilled restarts).
 
 ### Multi-Stage Dockerfile
 ```dockerfile
@@ -558,6 +578,8 @@ flowchart LR
 ---
 
 ## Testing in Spring
+
+Spring Boot's testing framework provides three layers of test slicing: `@SpringBootTest` loads the *full* application context for true integration tests (use Testcontainers for real DB); `@WebMvcTest` loads *only* the web layer (controllers, filters, advice) in isolation, with service layer mocked — fast and focused; `@DataJpaTest` loads *only* the JPA layer (repositories, entity manager) — ideal for testing queries without starting a web server. Knowing which slice to use for which purpose is a common senior interview question. Testcontainers is the modern alternative to H2 in-memory databases — it spins up a real PostgreSQL container for each test run, eliminating H2 compatibility differences.
 
 ```java
 // @SpringBootTest: full context, integration test

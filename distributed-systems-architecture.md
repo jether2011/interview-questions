@@ -6,13 +6,16 @@
 3. [Consensus Algorithms](#consensus-algorithms)
 4. [Time & Ordering](#time--ordering)
 5. [Fault Tolerance](#fault-tolerance)
-6. [Distributed Transactions](#distributed-transactions)
-7. [Data Structures for Distribution](#data-structures-for-distribution)
-8. [Architectural Patterns](#architectural-patterns)
+6. [Idempotency](#idempotency)
+7. [Distributed Transactions](#distributed-transactions)
+8. [Data Structures for Distribution](#data-structures-for-distribution)
+9. [Architectural Patterns](#architectural-patterns)
 
 ---
 
 ## Fundamentals
+
+Distributed systems involve multiple computers communicating over a network to appear as a single coherent system. This adds enormous complexity: each machine can fail independently, messages between them can be lost or delayed, and there's no shared clock to agree on the order of events. The key insight is that partial failures — where some components work and others don't — are the hardest to handle, because the system must decide whether a slow node is dead or just slow.
 
 ### Why Distributed Systems Are Hard
 
@@ -52,6 +55,8 @@
 ---
 
 ## CAP, PACELC & Consistency Models
+
+CAP theorem defines the fundamental trade-off every distributed database must make during a network partition. PACELC extends it to the non-partition case — even when everything is healthy, there's still a choice between faster responses (lower latency) and stronger consistency (more coordination rounds). Understanding this helps you choose the right database for a use case: financial systems need strong consistency (CP), while social media feeds tolerate eventual consistency (AP) for lower latency.
 
 ### CAP Theorem
 
@@ -101,6 +106,8 @@ Even **without** partition, there's still a trade-off:
 
 ## Consensus Algorithms
 
+Consensus algorithms solve the problem of getting multiple nodes to agree on a single value, even when some nodes fail or messages are lost. This is needed for leader election (which node handles writes?), distributed locks (who owns the resource?), and configuration management (what's the current config?). Raft is the algorithm used by etcd (which powers Kubernetes) — understanding it helps explain how cluster state remains consistent even when nodes restart.
+
 ### Why Consensus?
 
 Needed when multiple nodes must agree on a value (leader election, distributed lock, config changes). Must tolerate up to f failures with 2f+1 nodes.
@@ -143,6 +150,8 @@ With N replicas, write to W, read from R. **R + W > N** guarantees strong consis
 
 ## Time & Ordering
 
+Without a global clock, distributed systems can't rely on timestamps to determine the order of events — two machines' clocks can drift by hundreds of milliseconds. Logical clocks solve this by tracking *causality* (if A caused B, then A happened before B) rather than wall-clock time. This is critical for conflict resolution in replicated systems, debugging distributed traces, and implementing snapshot isolation.
+
 ### Logical Clocks
 
 **Lamport Clock:** Each event increments counter. `send(max(local, received) + 1)`. Establishes **happened-before** partial ordering — if a→b then L(a) < L(b), but NOT vice versa.
@@ -169,6 +178,8 @@ NTP accuracy: ±10-500ms. Not sufficient for distributed ordering. Clock skew ca
 ---
 
 ## Fault Tolerance
+
+Fault tolerance is the ability of a system to continue operating correctly when components fail. In distributed systems, failures are not exceptional — they're expected. The design goal is to make failures invisible to end users through redundancy, automatic detection, and recovery. The hardest part is failure *detection*: a node that's slow looks identical to a node that's dead, and the wrong decision (declare it dead too early) causes split-brain; too late causes cascading timeouts.
 
 ### Failure Detection
 
@@ -231,7 +242,155 @@ See `microservices-patterns.md` for Resilience4j implementation.
 
 ---
 
+## Idempotency
+
+Idempotency is the property where performing an operation multiple times produces the same result as performing it once. In distributed systems, this is not a nice-to-have — it is **essential for correctness**. Networks fail, clients retry, messages are redelivered (at-least-once delivery). Without idempotency, retries cause duplicate payments, duplicate orders, or corrupted state. Designing operations to be idempotent means the system is *safe to retry* — a property that makes every other failure-handling mechanism (retries, circuit breakers, saga compensation) reliable.
+
+### Why Idempotency Matters
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant S as Service
+    participant DB as Database
+
+    C->>S: POST /payments (amount=100, key=uuid-abc)
+    S->>DB: INSERT payment (idempotency_key=uuid-abc)
+    Note over S: Network timeout — client didn't get response
+    C->>S: POST /payments (amount=100, key=uuid-abc) ← RETRY
+    S->>DB: Check: key=uuid-abc already exists?
+    DB-->>S: Yes — return stored result
+    S-->>C: 200 OK (same result, no duplicate charge)
+```
+
+Without the idempotency check: the retry creates a second payment of 100 → customer charged twice.
+
+### HTTP Idempotency by Method
+
+| Method | Idempotent? | Safe? | Reason |
+|---|---|---|---|
+| GET | ✅ Yes | ✅ Yes | Read-only, no side effects |
+| HEAD | ✅ Yes | ✅ Yes | Read-only |
+| PUT | ✅ Yes | ❌ No | Replace resource — same result each time |
+| DELETE | ✅ Yes | ❌ No | Delete once or 10 times → resource gone |
+| PATCH | ❌ No (usually) | ❌ No | `set name=X` is idempotent; `increment by 1` is not |
+| POST | ❌ No | ❌ No | Creates new resource each call — not idempotent by default |
+
+**Making POST idempotent:** require clients to send an `Idempotency-Key` header (UUID generated client-side). Server stores the result keyed by this UUID and returns the stored response on duplicate requests.
+
+### Implementation Patterns
+
+**Pattern 1: Idempotency Key + Response Cache (HTTP APIs)**
+
+```java
+// Server-side idempotency handler
+@PostMapping("/payments")
+public ResponseEntity<PaymentResult> createPayment(
+        @RequestHeader("Idempotency-Key") String idempotencyKey,
+        @RequestBody PaymentRequest request) {
+
+    // 1. Check if this key was already processed
+    Optional<PaymentResult> cached = idempotencyStore.get(idempotencyKey);
+    if (cached.isPresent()) {
+        return ResponseEntity.ok(cached.get()); // return stored result, no reprocessing
+    }
+
+    // 2. Acquire distributed lock for this key (prevents concurrent duplicate requests)
+    try (var lock = redisson.getLock("idem:" + idempotencyKey).tryLock(5, 30, SECONDS)) {
+        // Re-check after acquiring lock (another thread may have processed meanwhile)
+        cached = idempotencyStore.get(idempotencyKey);
+        if (cached.isPresent()) return ResponseEntity.ok(cached.get());
+
+        // 3. Process the payment
+        PaymentResult result = paymentService.charge(request);
+
+        // 4. Store result with TTL (e.g., 24 hours)
+        idempotencyStore.save(idempotencyKey, result, Duration.ofHours(24));
+        return ResponseEntity.status(201).body(result);
+    }
+}
+```
+
+**Pattern 2: Database Unique Constraint (Event Consumers / Kafka)**
+
+```java
+// INSERT ... ON CONFLICT DO NOTHING — atomic deduplication at DB level
+@Transactional
+public void processPaymentEvent(PaymentEvent event) {
+    // Unique constraint on event_id prevents double-processing
+    int inserted = jdbcTemplate.update(
+        "INSERT INTO processed_events (event_id, processed_at) VALUES (?, ?) " +
+        "ON CONFLICT (event_id) DO NOTHING",
+        event.getId(), Instant.now()
+    );
+
+    if (inserted == 0) {
+        log.warn("Duplicate event {}, skipping", event.getId());
+        return; // already processed
+    }
+
+    // Business logic runs only if this is a new event
+    paymentService.execute(event);
+}
+```
+
+**Pattern 3: Conditional Update (Optimistic Idempotency)**
+
+```java
+// Use a "processed" flag or state transition to make operations idempotent
+@Transactional
+public void fulfillOrder(Long orderId) {
+    Order order = orderRepo.findById(orderId).orElseThrow();
+
+    // Idempotent: if already fulfilled, do nothing
+    if (order.getStatus() == OrderStatus.FULFILLED) {
+        log.info("Order {} already fulfilled", orderId);
+        return;
+    }
+
+    // Transition is idempotent: PAID → FULFILLED (only runs once)
+    order.setStatus(OrderStatus.FULFILLED);
+    order.setFulfilledAt(Instant.now());
+    orderRepo.save(order);
+    inventoryService.release(orderId);
+}
+```
+
+**Pattern 4: Natural Idempotency (Design the operation itself)**
+
+```java
+// Instead of: increment stock by 5 (NOT idempotent — retry doubles it)
+// Use: set stock to absolute value (idempotent)
+UPDATE products SET stock = :newStock WHERE id = :id
+// Or: make the update conditional on current state
+UPDATE products SET stock = stock - 1 WHERE id = :id AND stock > 0 AND version = :version
+```
+
+### Idempotency in Message-Driven Systems
+
+In Kafka / async systems with at-least-once delivery, **every consumer must be idempotent**. Strategies:
+
+| Strategy | Mechanism | Use Case |
+|---|---|---|
+| DB unique constraint | `ON CONFLICT DO NOTHING` on `event_id` | Simple, reliable |
+| Redis `SET NX` | Set key only if not exists; TTL = message retention | High-throughput, short dedup window |
+| Outbox table | Process = insert to outbox; idempotency on `event_id` FK | Combined with outbox pattern |
+| Event sourcing | Events are facts; replaying the same event = same state transition | Audit-oriented systems |
+| Business key | Natural business idempotency (e.g., order can only be paid once) | Domain-level |
+
+### Key Rules for Idempotent Design
+
+1. **Idempotency key must be client-generated** — not server-generated. The client must send the same key on retries.
+2. **Store the full response, not just a flag** — so duplicate requests get the exact same response.
+3. **TTL on the idempotency store** — 24 hours is typical (matches client retry window).
+4. **Idempotency key scope** — per operation type, not global (same key can be reused for different payment endpoints).
+5. **Distinguish retry from fraud** — same key from same client = retry; same amount from different key = potential duplicate order (business logic decision).
+
+---
+
 ## Distributed Transactions
+
+A distributed transaction spans multiple services or databases and must succeed or fail atomically across all of them. This is one of the hardest problems in distributed systems because the coordinator and participants can fail independently at any point. 2PC was the classic solution but has a fatal blocking problem. For microservices, the Saga pattern is preferred — it decomposes the transaction into a sequence of local transactions with compensating actions for rollback, accepting eventual consistency instead of strict atomicity.
 
 ### 2-Phase Commit (2PC)
 
@@ -285,6 +444,8 @@ More code per service but avoids long-held locks.
 
 ## Data Structures for Distribution
 
+Some distributed problems can be solved elegantly with the right data structure, avoiding the need for coordination altogether. CRDTs allow replicas to diverge and merge without conflict — perfect for use cases where eventual consistency is acceptable. Bloom filters and HyperLogLog trade a small probability of error for dramatic memory savings — essential at scale where exact counts would require unbounded memory.
+
 ### CRDTs (Conflict-Free Replicated Data Types)
 
 Data structures that can be merged without conflict — no coordination needed:
@@ -325,6 +486,8 @@ Key property: adding/removing a node only remaps K/N keys (not all keys).
 ---
 
 ## Architectural Patterns
+
+Architectural patterns provide proven structural blueprints for organizing code. In distributed systems, the right architecture determines how easily you can test business logic without a database, swap infrastructure, and evolve independently. Hexagonal architecture keeps the domain pure — no framework or DB dependencies in business logic. DDD provides the vocabulary and boundaries for decomposing complex domains. These concepts directly inform microservice decomposition (bounded contexts map to services).
 
 ### Hexagonal Architecture (Ports & Adapters)
 

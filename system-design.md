@@ -19,6 +19,8 @@
 
 ## Interview Framework
 
+The system design interview tests your ability to reason through ambiguity, make justified trade-offs, and communicate architectural decisions clearly. Interviewers care more about *how* you think than whether you nail a specific implementation. Following a structured approach keeps you on track and shows maturity.
+
 **5-step framework:**
 
 ```
@@ -68,6 +70,8 @@
 
 ## Availability, SLA, SLO, SLI
 
+Availability is not just uptime — it's the percentage of time a system correctly serves requests. A site can be "up" but returning 500 errors and still violate its SLA. The SLA/SLO/SLI hierarchy is how organizations formalize availability commitments: the SLA is the external promise, the SLO is the internal target (tighter, to leave a buffer), and the SLI is the actual measured reality.
+
 | Term | Definition |
 |---|---|
 | **SLA** (Service Level Agreement) | Legal/contractual commitment to customers (e.g., 99.9% uptime) |
@@ -92,6 +96,8 @@
 ---
 
 ## Scalability
+
+Scalability is about growing capacity without redesigning the system. Vertical scaling has a hard ceiling (the biggest machine available), while horizontal scaling requires the application to be stateless — any server can handle any request. The diagram below shows the canonical pattern: a load balancer distributing requests to N identical API instances that all share the same external state (DB and cache).
 
 ### Horizontal vs Vertical Scaling
 
@@ -122,6 +128,8 @@ flowchart LR
 
 ## CAP Theorem & PACELC
 
+CAP theorem states that no distributed system can simultaneously guarantee all three properties — and since network partitions are a reality (not a theoretical concern), every system must choose its behavior *when a partition occurs*: either stop responding (CP) or continue with potentially stale data (AP). PACELC adds the insight that even without a partition, there's a trade-off between consistency and latency — stronger consistency requires more coordination rounds between nodes, which adds latency.
+
 **CAP:** A distributed system can guarantee at most 2 of 3: **Consistency, Availability, Partition Tolerance**.
 
 Since network partitions are unavoidable, real systems choose between **CP** or **AP**:
@@ -147,6 +155,8 @@ Since network partitions are unavoidable, real systems choose between **CP** or 
 
 ## Load Balancing
 
+A load balancer distributes incoming traffic across multiple backend instances. It's the first point of contact after DNS resolution and is responsible for health-checking backends, removing unhealthy instances from rotation, and applying routing policies. L4 balancers operate at the TCP level (fast, no HTTP awareness), while L7 balancers understand HTTP — enabling path-based routing, header inspection, and SSL offloading.
+
 **Algorithms:**
 
 | Algorithm | Description | Use case |
@@ -167,6 +177,8 @@ Since network partitions are unavoidable, real systems choose between **CP** or 
 ---
 
 ## Caching Strategies
+
+Caching is the single most impactful optimization in most systems. The fundamental insight: a cache hit costs microseconds, a database read costs milliseconds — a 1000× difference. The choice of strategy determines when data enters the cache (on read vs on write), how fresh it is, and what happens on failures. Cache-aside is the most common because it only caches data that's actually requested and keeps the application in control.
 
 ```mermaid
 flowchart LR
@@ -231,6 +243,8 @@ if (cached == null) {
 
 ## Database Sharding & Replication
 
+A single database node has finite read and write capacity. Replication solves read scalability by having multiple copies serve reads — but all writes still go to one primary. Sharding (also called horizontal partitioning) solves write scalability by splitting data across multiple independent nodes, each owning a slice of the dataset. Both techniques are often combined: each shard has its own replica set.
+
 ### Replication (read scalability + high availability)
 
 ```mermaid
@@ -275,6 +289,8 @@ flowchart TD
 
 ## Consistent Hashing
 
+With naive modulo hashing (`hash(key) % N`), adding or removing one node forces almost all keys to be remapped — an expensive reshuffling of data. Consistent hashing places both nodes and keys on a conceptual ring (0 to 2³²). Each key maps to the first node encountered clockwise from its position. Adding a node only takes keys from its immediate predecessor; removing a node only moves its keys to its successor. This limits remapping to approximately 1/N of the data.
+
 Minimizes remapping when nodes are added/removed (vs modulo hashing where `hash % N` remaps almost everything).
 
 ```
@@ -294,6 +310,8 @@ Used in: Cassandra, DynamoDB, Riak, CDN routing.
 ---
 
 ## Designing a Queryable RESTful API
+
+Designing a queryable API goes beyond CRUD. The API needs to be expressive enough for clients to filter, sort, and paginate large datasets without overloading the backend. The key principle is that URL structure communicates *resource relationships*, while query parameters communicate *view preferences* (which subset, in what order, how many). A consistent response envelope makes it trivial for clients to handle pagination generically. RFC 7807 error format gives clients machine-readable error information for proper handling.
 
 **My approach when designing a queryable REST API:**
 
@@ -423,32 +441,43 @@ public class OrderController {
 
 ## Design: URL Shortener
 
+A URL shortener maps a long URL to a unique short code (e.g., `sho.rt/abc123`). The write path stores the mapping; the read path is a simple lookup followed by an HTTP redirect. Because redirects vastly outnumber writes (read-heavy system), caching hot codes in Redis is critical. The short code is not derived from the URL itself (hashes risk collisions) — instead it's generated from an auto-incremented ID encoded in base62.
+
 **Requirements:** shorten URLs, redirect short URLs, analytics (optional). 100M URLs/day.
 
 ```mermaid
-flowchart LR
-    Client -->|POST /shorten {url}| API[API Service]
-    API -->|store mapping| DB[(Key-Value Store\nDynamoDB / Redis)]
-    API -->|return https://sho.rt/abc123| Client
+flowchart TD
+    subgraph Write["Write Path (POST /shorten)"]
+        C1[Client] -->|"POST /shorten {longUrl}"| API1[API Service]
+        API1 -->|"generate shortCode (base62 ID)"| GEN[ID Generator]
+        API1 -->|"store shortCode → longUrl"| DB[(Key-Value DB\nDynamoDB / Redis)]
+        API1 -->|"return shortCode"| C1
+    end
 
-    Browser -->|GET /abc123| API
-    API -->|lookup abc123| DB
-    DB -->|original URL| API
-    API -->|301 Redirect| Browser
+    subgraph Read["Read Path (GET /abc123)"]
+        C2[Browser] -->|"GET /abc123"| API2[API Service]
+        API2 -->|"lookup shortCode"| Cache[(Redis Cache\nhot codes)]
+        Cache -->|"miss: fallback"| DB
+        API2 -->|"HTTP 302 Redirect to longUrl"| C2
+    end
 ```
 
 **Key design decisions:**
+
 1. **Short code generation:** base62 encoding of auto-incremented ID or random 7 chars
    - `hash(url)` → collision risk → not ideal
-   - `ID → base62(ID)` → predictable, easy to distribute
-   - Random 7 chars (62^7 ≈ 3.5 trillion) → safe
-2. **301 vs 302 redirect:** 301 (permanent, browser caches) vs 302 (temporary, every click hits server for analytics)
-3. **Storage:** ~500 bytes per mapping × 100M/day × 30 days = ~1.5 TB/month
-4. **Read optimization:** cache hot short codes in Redis (80/20 rule)
+   - `ID → base62(ID)` → predictable, monotonically increasing
+   - Random 7 chars (62^7 ≈ 3.5 trillion) → collision-free at scale
+2. **301 vs 302 redirect:** 301 (permanent — browser caches, fewer server hits) vs 302 (temporary — every click hits server, enables analytics)
+3. **Storage:** ~500 bytes per mapping × 100M/day × 365 days ≈ ~18 TB/year. Use KV store (DynamoDB, Redis) — simple GET/PUT with key = shortCode.
+4. **Read optimization:** cache hot short codes in Redis (80% of traffic hits 20% of codes). TTL = hours to days.
+5. **Analytics:** async pipeline — write click events to Kafka → aggregate in ClickHouse / BigQuery.
 
 ---
 
 ## Design: Rate Limiter
+
+A rate limiter protects backend services from being overwhelmed by too many requests — whether from abusive clients, runaway scripts, or DDoS traffic. It sits at the API gateway or as middleware and decisions must be made in microseconds (before the request is forwarded). Because there are multiple gateway instances, counters must be shared — Redis is the standard choice since its atomic operations (`INCR`, `SETNX`, Lua scripts) prevent race conditions between instances.
 
 **Goal:** limit requests per user/IP/API key to protect backend.
 
@@ -493,6 +522,8 @@ end
 
 ## Design: Notification System
 
+A notification system decouples the triggering event from the actual delivery. The producing service simply publishes to a Kafka topic; worker consumers handle routing and delivery per channel. This design absorbs traffic spikes (Kafka buffers), allows independent scaling per channel (push workers vs email workers), and ensures at-least-once delivery with retries. Each channel has its own rate limits, throttling rules, and third-party SLAs.
+
 **Types:** push (mobile), email, SMS, in-app. Scale: 10M notifications/day.
 
 ```mermaid
@@ -516,6 +547,8 @@ flowchart TD
 ---
 
 ## Design: Chat System
+
+A chat system is fundamentally a real-time message routing problem. WebSocket provides bidirectional, persistent connections so the server can push messages without the client polling. The challenge is that sender and receiver may be connected to *different* WebSocket servers — Kafka acts as the message bus between them. For persistence, Cassandra is ideal because messages are always appended (never updated), queried by conversation + time (perfectly mapped to partition key + clustering key), and write throughput is enormous.
 
 **Requirements:** 1-to-1 and group chat, online status, message history.
 
