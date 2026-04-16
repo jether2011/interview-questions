@@ -2,179 +2,337 @@
 
 ## Table of Contents
 1. [Interview Framework](#interview-framework)
-2. [Availability & SLA](#availability--sla)
+2. [Availability, SLA, SLO, SLI](#availability-sla-slo-sli)
 3. [Scalability](#scalability)
-4. [CAP Theorem](#cap-theorem)
+4. [CAP Theorem & PACELC](#cap-theorem--pacelc)
 5. [Load Balancing](#load-balancing)
-6. [Caching](#caching)
-7. [Database Sharding](#database-sharding)
-8. [Designing a Queryable RESTful API](#designing-a-queryable-restful-api)
-9. [Common Design Problems](#common-design-problems)
+6. [Caching Strategies](#caching-strategies)
+7. [Database Sharding & Replication](#database-sharding--replication)
+8. [Consistent Hashing](#consistent-hashing)
+9. [Designing a Queryable RESTful API](#designing-a-queryable-restful-api)
+10. [Design: URL Shortener](#design-url-shortener)
+11. [Design: Rate Limiter](#design-rate-limiter)
+12. [Design: Notification System](#design-notification-system)
+13. [Design: Chat System](#design-chat-system)
 
 ---
 
 ## Interview Framework
 
-**5-step approach:**
+**5-step framework:**
 
 ```
-1. CLARIFY (5 min)   → functional + non-functional requirements, scale, constraints
-2. ESTIMATE (3 min)  → QPS, storage, bandwidth
-3. HIGH-LEVEL (10 min) → draw components, data flow, APIs
-4. DEEP DIVE (15 min)  → critical components, data models, algorithms
-5. BOTTLENECKS (5 min) → where will it break? caching, sharding, queues
+1. CLARIFY REQUIREMENTS (5 min)
+   ├── Functional: What must the system do? Core features only (no gold-plating)
+   ├── Non-functional: Scale? Latency? Availability? Consistency?
+   └── Constraints: Budget? Tech stack? Geographic regions?
+
+2. BACK-OF-ENVELOPE ESTIMATION (3 min)
+   ├── Users: DAU, MAU, concurrent users
+   ├── Traffic: reads/sec, writes/sec, read:write ratio
+   ├── Storage: object size × daily volume × retention
+   └── Bandwidth: QPS × average response size
+
+3. HIGH-LEVEL DESIGN (10 min)
+   ├── Draw boxes: clients, API gateway, services, DBs, caches
+   ├── Data flow: how does a request flow end-to-end?
+   └── APIs: list 3-5 key endpoints
+
+4. DEEP DIVE (15 min)
+   ├── Pick 2-3 critical components to detail
+   ├── Data models and schemas
+   ├── Algorithms (e.g., consistent hashing, Bloom filter)
+   └── Edge cases and failure modes
+
+5. BOTTLENECKS & SCALE (5 min)
+   ├── Where does it break at 10× scale?
+   ├── Caching opportunities
+   ├── DB sharding
+   └── Trade-offs discussed
 ```
 
-Always discuss **trade-offs**. There are no perfect designs, only appropriate ones.
+**Always discuss trade-offs.** No perfect design — show you understand the implications.
+
+**Estimation numbers to know:**
+| Item | Value |
+|---|---|
+| Memory access | ~100ns |
+| SSD random read | ~100μs |
+| Network round-trip (same region) | ~500μs |
+| Disk seek | ~10ms |
+| 1MB over network | ~10ms |
+| QPS one machine can handle (simple) | ~50k-100k HTTP req/s |
+| Read from DB (indexed) | ~1ms |
 
 ---
 
-## Availability & SLA
+## Availability, SLA, SLO, SLI
 
-| Nines | Downtime/year | Downtime/month |
-|---|---|---|
-| 99% | 3.65 days | 7.3 hours |
-| 99.9% | 8.76 hours | 43 min |
-| 99.99% | 52 min | 4.4 min |
-| 99.999% | 5.2 min | 26 sec |
+| Term | Definition |
+|---|---|
+| **SLA** (Service Level Agreement) | Legal/contractual commitment to customers (e.g., 99.9% uptime) |
+| **SLO** (Service Level Objective) | Internal target, stricter than SLA (e.g., 99.95% internally to have buffer) |
+| **SLI** (Service Level Indicator) | Actual measured metric (e.g., percentage of successful requests over 30 days) |
+| **Error Budget** | 1 - SLO = how much "badness" is allowed. 99.9% SLO = 8.76 hours/year error budget |
 
-**SLA** = contractual commitment. **SLO** = internal target. **SLI** = actual measured metric.
+| Nines | Downtime/Year | Downtime/Month | Downtime/Week |
+|---|---|---|---|
+| 99% (two 9s) | 3.65 days | 7.31 hours | 1.68 hours |
+| 99.9% (three 9s) | 8.76 hours | 43.83 min | 10.08 min |
+| 99.99% (four 9s) | 52.60 min | 4.38 min | 1.01 min |
+| 99.999% (five 9s) | 5.26 min | 26.30 sec | 6.05 sec |
 
-Achieve high availability with: active-active redundancy, health checks, circuit breakers, multi-AZ deployments.
+**Achieving high availability:**
+- Redundancy: active-active (both serve traffic) or active-passive (standby)
+- Health checks + automatic failover
+- Multi-AZ / multi-region deployment
+- Circuit breakers to isolate failures
+- Graceful degradation (serve cached/stale data vs complete failure)
 
 ---
 
 ## Scalability
 
-### Horizontal vs Vertical
+### Horizontal vs Vertical Scaling
 
-| | Vertical (scale-up) | Horizontal (scale-out) |
+| | Vertical (Scale-Up) | Horizontal (Scale-Out) |
 |---|---|---|
-| Method | Bigger machine | More machines |
-| Limit | Hardware ceiling | Practically unlimited |
-| Failure mode | Single point | Fault tolerant |
-| Best for | Databases, stateful | Stateless services |
+| Approach | Bigger machine (more CPU, RAM, SSD) | More machines |
+| Limit | Hardware ceiling (~hundreds of cores) | Practically unlimited |
+| Cost | Non-linear — very expensive at top end | Linear with commodity hardware |
+| Failure mode | Single point of failure | Fault tolerant |
+| Complexity | Simple (no code changes) | Requires statelessness, LB, distributed state |
+| Best for | Databases, stateful services | Stateless web/API services |
+
+**Making services horizontally scalable:**
+1. **Stateless** — no local session data. Store sessions in Redis.
+2. **Shared nothing** — each instance reads/writes from same external stores (DB, cache).
+3. **Externalized config** — no hardcoded IPs or env-specific code.
 
 ```mermaid
 flowchart LR
-    LB[Load Balancer] --> S1[Service Instance 1]
-    LB --> S2[Service Instance 2]
-    LB --> S3[Service Instance 3]
-    S1 --> DB[(Database)]
-    S2 --> DB
-    S3 --> DB
+    LB[Load Balancer] --> S1[API Instance 1]
+    LB --> S2[API Instance 2]
+    LB --> S3[API Instance 3]
+    S1 & S2 & S3 --> DB[(Database)]
+    S1 & S2 & S3 --> Cache[(Redis)]
 ```
-
-**Key to horizontal scaling:** statelessness. Store session state in Redis, not in-process.
 
 ---
 
-## CAP Theorem
+## CAP Theorem & PACELC
 
-A distributed system can guarantee at most **2 of 3**: Consistency, Availability, Partition Tolerance.
+**CAP:** A distributed system can guarantee at most 2 of 3: **Consistency, Availability, Partition Tolerance**.
 
-Since network partitions are inevitable, the real choice is **CP vs AP**:
+Since network partitions are unavoidable, real systems choose between **CP** or **AP**:
 
-```mermaid
-graph TD
-    CAP((CAP))
-    C[Consistency\nAll nodes see same data]
-    A[Availability\nEvery request gets a response]
-    P[Partition Tolerance\nSystem works despite network split]
-    CAP --- C
-    CAP --- A
-    CAP --- P
-```
+| | CP Systems | AP Systems |
+|---|---|---|
+| Examples | Zookeeper, etcd, HBase, MongoDB (default) | Cassandra, DynamoDB, CouchDB |
+| Partition behavior | Return error (consistent but unavailable) | Return possibly stale data (available but inconsistent) |
+| Use case | Leader election, config, financial | Shopping carts, social feeds, DNS |
 
-- **CP** (Zookeeper, HBase): returns error if partition → correct but unavailable
-- **AP** (Cassandra, DynamoDB): returns possibly stale data → available but not consistent
-- **PACELC** extends CAP: even without partitions, there's a latency/consistency trade-off
+**PACELC** extends CAP: even without partitions, there's a trade-off between **Latency (L)** and **Consistency (C)**:
+- DynamoDB: PA/EL (available + low latency)
+- Spanner: PC/EC (consistent at the cost of latency)
+
+**Consistency models (weakest to strongest):**
+- **Eventual consistency** — replicas converge given no new writes
+- **Monotonic reads** — never see older data than you've seen before
+- **Read-your-writes** — you always see your own writes
+- **Causal consistency** — causally related operations seen in order
+- **Linearizability** — strongest; operations appear instantaneous; real-time ordered
 
 ---
 
 ## Load Balancing
 
 **Algorithms:**
-- **Round Robin** — simple rotation; best when servers are identical
-- **Least Connections** — route to server with fewest active connections
-- **IP Hash** — consistent routing per client (session stickiness)
-- **Weighted** — route more traffic to more capable servers
 
-**Health checks:** LB removes unhealthy instances from the pool automatically.
+| Algorithm | Description | Use case |
+|---|---|---|
+| Round Robin | Cycle through servers in order | Homogeneous servers |
+| Weighted Round Robin | More requests to more powerful servers | Heterogeneous servers |
+| Least Connections | Route to server with fewest active connections | Long-lived connections |
+| IP Hash | Hash client IP → always route to same server | Session stickiness |
+| Least Response Time | Route to fastest-responding server | Latency-sensitive |
+| Random | Pick randomly | Simple, works well at scale |
+
+**Layers:**
+- **L4 (Transport):** Load balance TCP/UDP — fast, no HTTP awareness (AWS NLB)
+- **L7 (Application):** Load balance HTTP — content-based routing, SSL termination, WAF (AWS ALB, Nginx)
+
+**Health checks:** active (LB pings `/health`) or passive (monitor for failures). Unhealthy instances removed from rotation.
 
 ---
 
-## Caching
+## Caching Strategies
 
 ```mermaid
 flowchart LR
-    Client --> Cache[(Redis / Memcached)]
+    App --> Cache[(Cache\nRedis)]
     Cache -->|miss| DB[(Database)]
     DB --> Cache
-    Cache --> Client
+    Cache --> App
 ```
 
-**Strategies:**
-- **Cache-Aside** — app checks cache first; on miss, loads DB and populates cache (most common)
-- **Write-Through** — write to cache + DB synchronously; always consistent, higher write latency
-- **Write-Behind** — write to cache; async flush to DB; fast writes, risk of data loss
+### Cache-Aside (Lazy Loading) — Most Common
+```
+Read: Check cache → if miss: load from DB → store in cache → return
+Write: Update DB → invalidate cache (or update cache)
+```
+```java
+public Product getProduct(Long id) {
+    return cache.get(id, () -> db.findById(id)); // Spring @Cacheable does this
+}
+```
+**Pros:** only caches data that's actually requested. **Cons:** cache miss = extra latency; stale data possible.
 
-**Eviction policies:** LRU (default), LFU, TTL-based.
+### Write-Through
+Write to cache AND DB synchronously. Cache always up-to-date.  
+**Pros:** no stale reads. **Cons:** write latency, data not yet requested wastes cache space.
 
-**Cache invalidation** is the hard part. Use short TTLs + event-driven invalidation for critical data.
+### Write-Behind (Write-Back)
+Write to cache; async flush to DB. Fast writes.  
+**Pros:** very fast writes. **Cons:** risk data loss if cache dies before flush.
+
+### Read-Through
+Cache sits in front; fetches from DB on miss transparently.  
+**Pros:** simple app code. **Cons:** cold start problem.
+
+### Cache Eviction Policies
+| Policy | Description |
+|---|---|
+| LRU (default) | Evict least recently used |
+| LFU | Evict least frequently used |
+| TTL | Time-based expiration |
+| FIFO | Evict oldest inserted |
+
+**Cache stampede prevention:** when a cache key expires, N threads all hit DB simultaneously.
+```java
+// Probabilistic early expiration or mutex-based prevention
+String cached = redis.get(key);
+if (cached == null) {
+    if (redis.setnx("lock:" + key, "1", 5, SECONDS)) { // only one thread re-fills
+        try {
+            String value = db.fetch(key);
+            redis.setex(key, 3600, value);
+        } finally { redis.del("lock:" + key); }
+    } else {
+        Thread.sleep(50); // brief wait, then retry
+        return redis.get(key);
+    }
+}
+```
+
+**CDN caching:** static assets (images, JS, CSS) cached at edge locations closest to user. Reduces latency and origin load.
 
 ---
 
-## Database Sharding
+## Database Sharding & Replication
 
-Partitioning data across multiple DB nodes to scale writes.
+### Replication (read scalability + high availability)
+
+```mermaid
+flowchart LR
+    W[Write] --> Primary[(Primary DB)]
+    Primary -->|async/sync replication| R1[(Replica 1)]
+    Primary --> R2[(Replica 2)]
+    R[Read] --> R1
+    R --> R2
+```
+
+- **Sync replication:** write confirmed after at least one replica acknowledges → zero data loss, higher write latency
+- **Async replication:** write confirmed immediately → lower latency, possible replication lag
+
+### Sharding (write scalability)
+
+Partition data across multiple DB nodes by a **shard key**.
 
 ```mermaid
 flowchart TD
     App --> Router[Shard Router]
-    Router -->|user_id 0-33%| S1[(Shard 1)]
-    Router -->|user_id 34-66%| S2[(Shard 2)]
-    Router -->|user_id 67-100%| S3[(Shard 3)]
+    Router -->|user_id % 3 = 0| S0[(Shard 0\nusers 0-33%)]
+    Router -->|user_id % 3 = 1| S1[(Shard 1\nusers 34-66%)]
+    Router -->|user_id % 3 = 2| S2[(Shard 2\nusers 67-100%)]
 ```
 
-**Shard key choice is critical.** A bad key causes hotspots (one shard handles all traffic).
+**Sharding strategies:**
+| Strategy | Description | Pros/Cons |
+|---|---|---|
+| Range sharding | `user_id 0-999 → Shard 0` | Simple; can hotspot if data not uniform |
+| Hash sharding | `hash(key) % N` | Even distribution; no range queries |
+| Directory/Lookup | Mapping table: key → shard | Flexible; lookup table is bottleneck |
+| Geo sharding | Route by geography | Low latency for regional data |
 
-**Consistent hashing** minimizes rebalancing when adding/removing shards.
+**Sharding challenges:**
+- Cross-shard joins — expensive/impossible
+- Distributed transactions — complex
+- Rebalancing when adding shards — requires data migration
+- Non-uniform key distribution → hotspots
 
-**Challenges:** cross-shard joins are expensive; distributed transactions are complex; rebalancing is hard.
+---
+
+## Consistent Hashing
+
+Minimizes remapping when nodes are added/removed (vs modulo hashing where `hash % N` remaps almost everything).
+
+```
+Ring: 0 ────────────────── 2^32-1
+             S1    S2    S3
+              ↑     ↑     ↑   (servers on ring)
+      K1   K2    K3   K4     (keys map to next server clockwise)
+```
+
+Adding a server: only the keys between it and its predecessor remap (1/N keys on average).  
+Removing a server: only its keys move to successor.
+
+**Virtual nodes:** each server gets multiple positions on the ring → better load distribution.
+
+Used in: Cassandra, DynamoDB, Riak, CDN routing.
 
 ---
 
 ## Designing a Queryable RESTful API
 
-My approach when designing a queryable REST API:
+**My approach when designing a queryable REST API:**
 
-### 1. Resource-Oriented URLs
+### 1. Resource-Oriented URL Design
+```
+GET    /api/v1/orders              → list orders (paginated)
+GET    /api/v1/orders/{id}         → get single order
+POST   /api/v1/orders              → create order
+PUT    /api/v1/orders/{id}         → full update
+PATCH  /api/v1/orders/{id}         → partial update
+DELETE /api/v1/orders/{id}         → delete order
+GET    /api/v1/orders/{id}/items   → sub-resources
+```
+- Nouns, not verbs. Resources, not actions.
+- Plural names (`/orders` not `/order`)
+- Hierarchical for sub-resources
+
+### 2. Filtering, Sorting, Pagination — Query Parameters
 
 ```
-GET  /orders             → list (paginated)
-GET  /orders/{id}        → single resource
-POST /orders             → create
-PUT  /orders/{id}        → full update
-PATCH /orders/{id}       → partial update
-DELETE /orders/{id}      → delete
+GET /api/v1/orders?
+    status=PENDING                 → filter
+    &customerId=42                 → filter
+    &totalMin=100&totalMax=1000    → range filter
+    &createdAfter=2024-01-01       → date filter
+    &sort=createdAt,desc           → sort (field,direction)
+    &page=0&size=20                → pagination (0-indexed)
+    &fields=id,status,total        → sparse fieldsets
 ```
 
-### 2. Filtering, Sorting, Pagination
+**Never return unbounded lists.** Always paginate with a reasonable default and max limit.
 
-Always on collections. Use query parameters, never verbs in the path.
-
-```
-GET /orders?status=pending&customerId=42&sort=createdAt,desc&page=0&size=20
-```
-
-Never return an unbounded list. Default to pagination with sensible limits (e.g., 20 items max).
-
-### 3. Consistent Response Envelope
+### 3. Response Envelope (Consistent Structure)
 
 ```json
 {
-  "data": [...],
+  "data": [
+    { "id": 1, "status": "PENDING", "total": 150.00 }
+  ],
   "meta": {
     "page": 0,
     "size": 20,
@@ -182,74 +340,201 @@ Never return an unbounded list. Default to pagination with sensible limits (e.g.
     "totalPages": 8
   },
   "links": {
-    "next": "/orders?page=1&size=20",
+    "self": "/api/v1/orders?page=0&size=20",
+    "next": "/api/v1/orders?page=1&size=20",
     "prev": null
   }
 }
 ```
 
-### 4. Versioning
-
-Use URL versioning for breaking changes: `/api/v1/orders`, `/api/v2/orders`.
-
-### 5. Error Responses
-
+### 4. Error Responses — RFC 7807 Problem Details
 ```json
 {
+  "type": "https://api.company.com/errors/validation-error",
   "status": 400,
-  "error": "VALIDATION_ERROR",
-  "message": "amount must be positive",
-  "traceId": "abc-123"
+  "title": "Validation Error",
+  "detail": "order.items must not be empty",
+  "traceId": "abc-123-def",
+  "timestamp": "2024-01-15T10:30:00Z",
+  "errors": [
+    { "field": "items", "message": "must not be empty" }
+  ]
 }
 ```
 
-### 6. HATEOAS (when warranted)
+### 5. Versioning Strategy
 
-Include links to related actions in responses. Useful for discoverability in complex APIs.
+- **URL versioning:** `/api/v1/orders` — most common, explicit, easy to route
+- **Header versioning:** `Accept: application/vnd.company.v1+json` — clean URLs, harder to test in browser
+- **Query param:** `/api/orders?version=1` — messy
 
-### 7. Performance Considerations
+**Breaking vs non-breaking changes:**
+- Non-breaking (safe): add optional field, add new endpoint, expand enum
+- Breaking (new version): remove field, rename field, change type, change semantics
 
-- Add DB indexes on all filterable fields
-- Use projections — return only requested fields
-- Cache `GET` responses with short TTLs (ETags, `Cache-Control`)
-- Rate-limit per API key to prevent abuse
+### 6. Performance for Queryable APIs
 
 ```mermaid
 flowchart LR
-    Client -->|GET /orders?status=pending| GW[API Gateway\nRate limit + Auth]
+    Client -->|GET /orders?status=PENDING| GW[API Gateway\nRate limit\nAuth]
     GW --> API[Order Service]
-    API -->|filter + sort| DB[(DB with indexes)]
-    API -->|check| Cache[(Redis Cache)]
+    API -->|check| Cache[(Redis\nTTL-based cache)]
+    Cache -->|miss| DB[(PostgreSQL)]
+    DB -->|indexed scan| API
+    API --> Client
+```
+
+- **DB indexes on all filterable fields**: `status`, `customerId`, `createdAt`, composite indexes for common filter combos
+- **Redis caching** for popular queries (short TTL + invalidation on write)
+- **Projections** — SELECT only needed columns (avoid `SELECT *`)
+- **Cursor-based pagination** for large datasets (avoids `OFFSET N` performance degradation)
+- **Rate limiting** per API key
+- **ETags** for conditional GET (304 Not Modified)
+
+### 7. Spring Boot Implementation
+
+```java
+@RestController
+@RequestMapping("/api/v1/orders")
+public class OrderController {
+    @GetMapping
+    public ResponseEntity<Page<OrderResponse>> list(
+            @RequestParam(required = false) OrderStatus status,
+            @RequestParam(required = false) Long customerId,
+            @RequestParam(required = false) @DateTimeFormat(iso = ISO.DATE) LocalDate createdAfter,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") @Max(100) int size,
+            @RequestParam(defaultValue = "createdAt,desc") String sort) {
+
+        Sort sortSpec = parseSortParam(sort);
+        Pageable pageable = PageRequest.of(page, size, sortSpec);
+
+        Specification<Order> spec = Specification.where(null);
+        if (status != null) spec = spec.and(OrderSpecs.hasStatus(status));
+        if (customerId != null) spec = spec.and(OrderSpecs.hasCustomer(customerId));
+        if (createdAfter != null) spec = spec.and(OrderSpecs.createdAfter(createdAfter));
+
+        return ResponseEntity.ok(orderRepo.findAll(spec, pageable).map(orderMapper::toResponse));
+    }
+}
 ```
 
 ---
 
-## Common Design Problems
+## Design: URL Shortener
 
-### Design a URL Shortener (bit.ly)
+**Requirements:** shorten URLs, redirect short URLs, analytics (optional). 100M URLs/day.
 
 ```mermaid
 flowchart LR
-    Client -->|POST /shorten| API[API Service]
-    API -->|save mapping| DB[(Key-Value Store\nRedis / DynamoDB)]
-    API -->|return short code| Client
-    Client2[Browser] -->|GET /abc123| API
-    API -->|lookup| DB
+    Client -->|POST /shorten {url}| API[API Service]
+    API -->|store mapping| DB[(Key-Value Store\nDynamoDB / Redis)]
+    API -->|return https://sho.rt/abc123| Client
+
+    Browser -->|GET /abc123| API
+    API -->|lookup abc123| DB
     DB -->|original URL| API
-    API -->|301 Redirect| Client2
+    API -->|301 Redirect| Browser
 ```
 
-Key decisions: base62 encoding for short codes; 301 (permanent) vs 302 (temporary) redirect; analytics tracking.
+**Key design decisions:**
+1. **Short code generation:** base62 encoding of auto-incremented ID or random 7 chars
+   - `hash(url)` → collision risk → not ideal
+   - `ID → base62(ID)` → predictable, easy to distribute
+   - Random 7 chars (62^7 ≈ 3.5 trillion) → safe
+2. **301 vs 302 redirect:** 301 (permanent, browser caches) vs 302 (temporary, every click hits server for analytics)
+3. **Storage:** ~500 bytes per mapping × 100M/day × 30 days = ~1.5 TB/month
+4. **Read optimization:** cache hot short codes in Redis (80/20 rule)
 
-### Design a Rate Limiter
+---
 
-Algorithms: **Token Bucket** (allows bursts), **Sliding Window** (smooth), **Fixed Window** (simple).
+## Design: Rate Limiter
 
-```java
-// Token Bucket in Redis (Lua script for atomicity)
-// tokens = min(capacity, tokens + rate * elapsed)
-// if tokens >= 1: allow, tokens -= 1
-// else: reject 429
+**Goal:** limit requests per user/IP/API key to protect backend.
+
+**Algorithms:**
+
+| Algorithm | Allows Bursts? | Memory | Accuracy |
+|---|---|---|---|
+| Token Bucket | Yes | Low | Good |
+| Leaky Bucket | No (smoothed) | Low | Good |
+| Fixed Window Counter | Yes (at boundaries) | Very low | Approximate |
+| Sliding Window Log | No | High | Exact |
+| Sliding Window Counter | Partially | Low | Good |
+
+```mermaid
+flowchart LR
+    Client -->|Request + API key| LB[Load Balancer]
+    LB --> RL[Rate Limiter\nmiddleware]
+    RL -->|check/decrement| Redis[(Redis\nAtomic counters)]
+    Redis -->|allowed| Service[Backend Service]
+    Redis -->|429 Too Many Requests| Client
 ```
 
-Store counters in Redis with TTL. Use **distributed rate limiting** with Redis cluster for multi-instance services.
+**Token Bucket in Redis (atomic Lua script):**
+```lua
+-- Arguments: key, capacity, refill_rate, cost
+local tokens = tonumber(redis.call('GET', KEYS[1])) or ARGV[1]
+local now = tonumber(ARGV[2])
+-- refill tokens based on elapsed time
+tokens = math.min(ARGV[1], tokens + (now - last_time) * ARGV[2])
+if tokens >= ARGV[3] then
+    tokens = tokens - ARGV[3]
+    redis.call('SET', KEYS[1], tokens)
+    return 1  -- allowed
+else
+    return 0  -- rejected
+end
+```
+
+**Distributed rate limiting:** all gateway instances share Redis counters → consistent limits across nodes.
+
+---
+
+## Design: Notification System
+
+**Types:** push (mobile), email, SMS, in-app. Scale: 10M notifications/day.
+
+```mermaid
+flowchart TD
+    API[Notification API] -->|publish| Kafka[(Kafka\nnotifications topic)]
+    Kafka --> Worker[Notification Workers\nConsumer Group]
+    Worker -->|route by type| Push[APNs / FCM\nPush Service]
+    Worker --> Email[SMTP / SendGrid]
+    Worker --> SMS[Twilio / SNS]
+    Worker --> DB[(DB\nnotification log)]
+```
+
+**Key considerations:**
+- **Priority queues:** critical alerts vs marketing (separate Kafka topics/partitions)
+- **Deduplication:** idempotency key prevents sending same notification twice
+- **Rate limiting per user:** max 3 SMS/hour per user
+- **Retry with backoff:** failed deliveries retry with exponential backoff
+- **Dead letter queue:** after N retries, move to DLQ for manual inspection
+- **User preferences:** respect opt-out, do-not-disturb hours, channel preference
+
+---
+
+## Design: Chat System
+
+**Requirements:** 1-to-1 and group chat, online status, message history.
+
+```mermaid
+flowchart TD
+    Client -->|WebSocket| WSS[WebSocket Server]
+    Client2 -->|WebSocket| WSS2[WebSocket Server]
+    WSS -->|publish| Kafka[(Kafka)]
+    Kafka --> WSS2
+    WSS -->|store| MsgDB[(Message DB\nCassandra)]
+    WSS -->|update presence| Cache[(Redis\nOnline Status)]
+```
+
+**Key design decisions:**
+1. **WebSocket** for real-time; fallback to long polling
+2. **Message delivery:** publisher → Kafka → subscriber's server → WebSocket
+3. **Message storage:** Cassandra for write-heavy time-series (messages by conversation + time)
+4. **Online status:** Redis with TTL (heartbeat every 5s updates TTL)
+5. **Message ordering:** Snowflake ID (timestamp + machine ID + sequence) — time-sortable, globally unique
+6. **Group chat fan-out:** for large groups (>1000 members), don't fan-out at send time — pull on read
+7. **Read receipts:** separate event stream, async
+8. **End-to-end encryption:** keys managed on client, server never has plaintext

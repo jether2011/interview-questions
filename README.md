@@ -1,92 +1,100 @@
-# Senior Java Interview Preparation Guide
+# Senior Java/Backend Interview Preparation Guide
 
-A concise, dense reference for senior Java/backend developers targeting international positions. Answers are direct, code is minimal, architecture topics use Mermaid diagrams.
+A dense, direct reference for senior Java/backend developers targeting international positions. Content is structured by theme, uses Mermaid diagrams for architecture, and provides concise code examples that explain concepts fast.
 
-## Content Files
+## Content Index
 
 | Topic | File | Key Areas |
 |---|---|---|
-| Java Fundamentals | [java-fundamentals.md](./java-fundamentals.md) | OOP pillars, polymorphism, collections, HashMap internals, exceptions, streams |
-| Multithreading | [java-multithreading.md](./java-multithreading.md) | Thread contention, 10k RPS strategies, race conditions, locks, CompletableFuture |
-| Spring Boot | [spring-boot.md](./spring-boot.md) | @Autowired, Bean lifecycle, @Transactional, JPA, OAuth2, Docker, EC2 |
-| Microservices | [microservices-patterns.md](./microservices-patterns.md) | Service Discovery, API Gateway, Saga, CQRS, Circuit Breaker |
-| System Design | [system-design.md](./system-design.md) | CAP, caching, sharding, RESTful API design, URL shortener, rate limiter |
-| Distributed Systems | [distributed-systems-architecture.md](./distributed-systems-architecture.md) | CAP/PACELC, Raft, fault tolerance, Hexagonal Architecture |
-| Docker & Kubernetes | [docker-kubernetes.md](./docker-kubernetes.md) | Dockerfile, K8s architecture, HPA, probes, rolling updates |
-| Design Patterns | [design-patterns-solid.md](./design-patterns-solid.md) | SOLID, Singleton, Strategy, Observer, Repository, Decorator |
-| Database & Caching | [database-caching.md](./database-caching.md) | SQL/NoSQL, indexes, isolation levels, sharding, Redis |
-| Messaging & EDA | [messaging-event-driven.md](./messaging-event-driven.md) | Kafka, delivery guarantees, Outbox pattern, choreography vs orchestration |
-| Solidity & Blockchain | [solidity-blockchain.md](./solidity-blockchain.md) | EVM E2E transactions, revert behavior, smart contract testing, gas |
-| Kotlin | [kotlin-language.md](./kotlin-language.md) | Null safety, coroutines, Flow, Java interop, Android |
+| Java Fundamentals | [java-fundamentals.md](./java-fundamentals.md) | OOP pillars, polymorphism, collections, HashMap internals, exceptions, Streams, Java 8-21 |
+| Multithreading | [java-multithreading.md](./java-multithreading.md) | Thread contention, 10k RPS strategies, race conditions, locks, CompletableFuture, Virtual Threads |
+| Spring Boot | [spring-boot.md](./spring-boot.md) | Auto-configuration, @Autowired, Bean lifecycle, @Transactional, JPA, OAuth2, Docker, EC2 |
+| Microservices | [microservices-patterns.md](./microservices-patterns.md) | Service Discovery, API Gateway, Circuit Breaker, Saga, CQRS, Event Sourcing |
+| System Design | [system-design.md](./system-design.md) | CAP/PACELC, caching, sharding, consistent hashing, RESTful API design, rate limiter |
+| Distributed Systems | [distributed-systems-architecture.md](./distributed-systems-architecture.md) | Raft/Paxos, vector clocks, CRDT, fault tolerance, DDD, Hexagonal Architecture |
+| Docker & Kubernetes | [docker-kubernetes.md](./docker-kubernetes.md) | Docker internals, multi-stage builds, K8s architecture, HPA, probes, Helm, service mesh |
+| Design Patterns | [design-patterns-solid.md](./design-patterns-solid.md) | SOLID deep-dive, all GoF patterns with code, enterprise patterns |
+| Database & Caching | [database-caching.md](./database-caching.md) | SQL/NoSQL, B-tree indexes, MVCC, isolation levels, sharding, Redis data structures |
+| Messaging & EDA | [messaging-event-driven.md](./messaging-event-driven.md) | Kafka internals, delivery guarantees, Outbox, schema evolution, EDA patterns |
+| Solidity & Blockchain | [solidity-blockchain.md](./solidity-blockchain.md) | EVM E2E (Web3j), revert behavior, Testcontainers/Foundry/Hardhat testing, gas, security |
+| Kotlin | [kotlin-language.md](./kotlin-language.md) | Null safety, coroutines, Flow, sealed classes, generics, Java interop, testing |
 
-## Topics Covered (Interview Q&A)
+## Interview Topics Coverage
 
-### Core Java & OOP
-- 4 pillars of OOP
-- Polymorphism (static vs dynamic)
-- Why Java doesn't support multiple inheritance
-- Abstract Class vs Interface
-- Diamond problem / default method conflict
-- ArrayList vs LinkedList, HashSet vs TreeSet
-- HashMap internals (buckets, treeify, load factor)
-- Checked vs Unchecked exceptions
-- synchronized, CountDownLatch
-- map() vs flatMap()
+### Core Java & OOP (Q1–Q16)
+- 4 OOP pillars with code examples
+- Static vs dynamic polymorphism, vtable dispatch
+- Diamond problem & multiple inheritance
+- Abstract class vs Interface (Java 8+ default methods)
+- ArrayList vs LinkedList Big-O, HashMap internals (buckets, treeify at 8, load factor 0.75)
+- equals()/hashCode() contract, immutable class rules
+- Checked vs unchecked exceptions, try-with-resources
+- map() vs flatMap(), Optional, Records, Sealed Classes
 
-### Spring Boot & Backend
-- What is Spring Boot (auto-configuration, starters, embedded server)
-- Spring Boot App vs Microservice
-- @Autowired resolution (type → qualifier → name)
-- Bean lifecycle (@PostConstruct, @PreDestroy)
-- @Transactional (propagation, rollback, proxy gotcha)
-- JPA / Hibernate (EntityManager states, N+1)
-- Spring Security + OAuth2 (authentication vs authorization)
-- Docker containerization + multi-stage Dockerfile
-- EC2 deployment
+### Multithreading & Concurrency (Q17–Q22)
+- Thread lifecycle, synchronized, ReentrantLock, ReadWriteLock
+- Thread contention: symptoms, jstack diagnosis, solutions
+- JMM happens-before, volatile vs AtomicInteger vs LongAdder
+- CountDownLatch, CyclicBarrier, Semaphore, Phaser
+- ThreadPoolExecutor, CompletableFuture async composition
+- **Handle 10,000 RPS**: WebFlux, Virtual Threads (Java 21), async 202, HikariCP tuning, horizontal scaling
+- **Race conditions in distributed systems**: optimistic lock, pessimistic lock, Redisson distributed lock, Redis atomic, idempotency keys, event sourcing
 
-### Microservices & Architecture
-- Advantages and trade-offs of microservices
-- Service Discovery (Eureka, Consul)
-- API Gateway (routing, auth, rate limiting)
-- Auto-detection of new instances (Spring Cloud Gateway)
-- Circuit Breaker (state machine)
-- Saga pattern (choreography + orchestration)
-- CQRS and Event Sourcing
-- Database per Service
+### Spring Boot (Q23–Q30)
+- Auto-configuration, starters, Spring Boot vs Microservice
+- @Autowired resolution (type → qualifier → name), constructor injection
+- Bean lifecycle (8 steps), @Transactional propagation + 3 gotchas
+- JPA entity states, N+1 fix (JOIN FETCH, @EntityGraph, @BatchSize)
+- Spring Security, OAuth2 authorization code flow (Mermaid), JWT
+- Docker multi-stage Dockerfile, EC2 deployment
 
-### Concurrency
-- Thread contention (definition, symptoms, fixes)
-- Handle 10,000 RPS (WebFlux, Virtual Threads, async, scaling)
-- Race conditions in distributed environments (optimistic lock, pessimistic lock, Redis lock, CAS, idempotency)
-- Deadlocks
-- volatile vs AtomicInteger
+### Microservices Architecture (Q31–Q40)
+- Advantages and trade-offs table
+- Service Discovery (Eureka), API Gateway (Spring Cloud Gateway)
+- Circuit Breaker state machine (Resilience4j), Bulkhead, Retry+jitter
+- Communication: REST vs gRPC vs Kafka comparison
+- Saga: choreography vs orchestration (both Mermaid sequences)
+- CQRS + Event Sourcing, DB per service
 
 ### System Design
-- Interview framework (5 steps)
-- Availability SLAs
-- CAP theorem and PACELC
-- Consistent hashing
-- Caching strategies (cache-aside, write-through, write-behind)
-- Designing a queryable RESTful API
-- URL shortener and Rate limiter design
+- 5-step framework with estimation numbers
+- CAP theorem, PACELC, consistency models
+- Caching strategies (cache-aside, write-through, write-behind, stampede prevention)
+- Database sharding (range, hash, directory, consistent hashing)
+- **Queryable RESTful API design** (resource URLs, filtering, pagination, versioning)
+- URL shortener, Rate limiter (token bucket), Notification system, Chat system
 
-### Blockchain
-- EVM transaction lifecycle E2E (Web3j)
-- Transaction revert behavior
-- Testing smart contracts (Testcontainers, Foundry, Hardhat fork)
-- Gas optimization
-- Reentrancy attack and CEI pattern
+### Distributed Systems
+- Raft consensus algorithm, Paxos comparison
+- Vector clocks, Lamport clocks, HLC (Google Spanner TrueTime)
+- CRDTs, Bloom filters, HyperLogLog
+- 2PC vs Saga, TCC
+- Hexagonal architecture, Clean Architecture, DDD
+- Anti-patterns: distributed monolith, shared DB, chatty services
 
-## How to Use
+### Blockchain & Solidity
+- EVM transaction lifecycle E2E with Web3j Java code
+- Transaction revert: require vs revert vs assert + gas behavior
+- Smart contract testing: Testcontainers+Ganache JUnit5, Foundry (fuzz tests), Hardhat TypeScript
+- Gas optimization (7 techniques, operation cost table)
+- Security: reentrancy CEI pattern, tx.origin vs msg.sender
+- Proxy/upgradeability pattern with delegatecall
 
-Study one topic at a time. For each question, read the answer then close the file and explain it in your own words. If you can't — re-read and try again.
+## Study Method
 
-For architecture questions, draw the diagram on paper before looking at the Mermaid source.
+1. **Theme-by-theme**: read one file per session, don't skip around
+2. **Close and explain**: after reading an answer, close the file and explain it aloud — if you can't, re-read
+3. **Draw first**: for architecture questions, sketch the diagram on paper before looking at the Mermaid source
+4. **Code from memory**: close the file and write the code example from scratch
+5. **Teach it**: explain concepts as if interviewing someone else
 
-## License
+## Format Conventions
 
-MIT — see [LICENSE](./LICENSE)
+- Tables for comparison — fast to scan
+- Mermaid diagrams for sequence flows and architecture
+- Concise code (explains the concept, not production-ready verbosity)
+- No obvious statements — if it's basic knowledge, it's skipped
 
 ## Author
 
-Jether Rodrigues do Nascimento
+Jether Rodrigues do Nascimento — [jetherrodrigues@gmail.com](mailto:jetherrodrigues@gmail.com)

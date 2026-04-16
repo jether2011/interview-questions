@@ -1,5 +1,63 @@
 # Changelog
 
+## [2026-04-15] - Second Comprehensive Rewrite: Maximum Depth + Kotlin Update
+
+### Summary
+All 12 content files received comprehensive rewrites targeting 600-900 lines each. Philosophy: maximum summarized information, concise code, tables for comparison, Mermaid diagrams for architecture. Kotlin file restructured from verbose Q&A format to thematic sections.
+
+### Changed (second-pass comprehensive rewrite)
+
+**messaging-event-driven.md**
+- Added: Kafka producer reliability settings (YAML), consumer group rebalancing, Kafka transactions (exactly-once)
+- Added: Schema Registry flow (Mermaid sequence), schema evolution rules table (backward/forward/full)
+- Added: Dead Letter Queue (DLQ) config + DefaultErrorHandler, Event Sourcing with OrderAggregate code
+- Added: Correlation ID propagation across Kafka headers, back-pressure consumer scaling guide
+- Added: inter-service communication comparison (REST/gRPC/Kafka), batch consumer pattern
+
+**distributed-systems-architecture.md**
+- Added: 8 key metrics table (latency, throughput, availability, etc.)
+- Added: Raft log replication flow (step-by-step), quorum formula (R + W > N)
+- Added: Lamport clock, Vector clock, HLC, Google Spanner TrueTime, why not NTP
+- Added: CRDTs (G-Counter, PN-Counter, LWW, OR-Set), Bloom filters, HyperLogLog
+- Added: SWIM protocol, Phi Accrual failure detection
+- Added: DDD key concepts table (Aggregate, Bounded Context, Value Object), Aggregate root code
+- Added: Strangler Fig pattern, distributed systems anti-patterns table
+
+**database-caching.md**
+- Added: B-Tree vs Hash index internals, PostgreSQL index types table (GIN, GiST, BRIN, Partial)
+- Added: MVCC deep-dive (xmin/xmax row headers, snapshot isolation mechanism)
+- Added: HikariCP pool sizing formula and YAML config
+- Added: Redis data structures with use cases table, sliding window rate limiting with Sorted Set
+- Added: Redis Cluster vs Sentinel comparison, Redisson distributed lock with Watchdog explanation
+- Added: Database selection flowchart (Mermaid), N+1 fix examples (@EntityGraph, @BatchSize)
+
+**docker-kubernetes.md**
+- Added: Container vs VM comparison table, Linux primitives (namespaces, cgroups, OverlayFS, seccomp)
+- Added: Docker network modes table, Volumes vs Bind Mounts
+- Added: StatefulSet YAML with volumeClaimTemplates, guarantees explained
+- Added: NetworkPolicy YAML (micro-segmentation), Ingress YAML with TLS + cert-manager
+- Added: Pod scheduling controls (nodeAffinity, podAntiAffinity, taints/tolerations)
+- Added: Helm commands + chart structure, Istio VirtualService for canary deployments
+- Added: Deployment strategies table (Rolling, Blue/Green, Canary, Recreate) + Mermaid
+
+**design-patterns-solid.md**
+- Added: SOLID with full code examples (SRP bad/good, OCP Strategy pattern, LSP Rectangle/Square)
+- Added: ISP with Worker/Robot example, DIP with injection comparison
+- Added: Abstract Factory, Prototype patterns with code
+- Added: Composite pattern (pricing components), Facade pattern
+- Added: Chain of Responsibility, State machine pattern, Template Method
+- Added: Event Sourcing aggregate, CQRS command/query separation code
+- Added: Pattern selection flowchart (Mermaid), "When to Use What" table
+
+**kotlin-language.md**
+- Restructured: replaced 100 verbose Q&As with 12 thematic sections
+- Kept: all key content — null safety operators, sealed classes, coroutines, Flow
+- Added: scope functions comparison table with use cases
+- Added: Value classes (inline classes) for type safety
+- Added: MockK testing patterns, coroutine testing with runTest
+- Added: Kotlin idioms quick reference section
+
+### Previous Rewrite
 ## [2026-04-15] - Major Content Rewrite: Conciseness & New Topics
 
 ### Philosophy Change

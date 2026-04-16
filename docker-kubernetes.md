@@ -1,51 +1,160 @@
 # Docker & Kubernetes
 
 ## Table of Contents
-1. [Docker Fundamentals](#docker-fundamentals)
+1. [Docker Internals](#docker-internals)
 2. [Dockerfile Best Practices](#dockerfile-best-practices)
-3. [Kubernetes Architecture](#kubernetes-architecture)
-4. [Deployments & Services](#deployments--services)
-5. [Configuration & Secrets](#configuration--secrets)
-6. [Scaling & Health](#scaling--health)
+3. [Docker Networking & Storage](#docker-networking--storage)
+4. [Kubernetes Architecture](#kubernetes-architecture)
+5. [Workloads & Services](#workloads--services)
+6. [Configuration & Secrets](#configuration--secrets)
+7. [Scaling, Health & Scheduling](#scaling-health--scheduling)
+8. [Kubernetes Networking & Ingress](#kubernetes-networking--ingress)
+9. [Helm & Service Mesh](#helm--service-mesh)
 
 ---
 
-## Docker Fundamentals
+## Docker Internals
 
 **Docker** packages an application and all its dependencies into a portable **image** that runs identically in any environment.
 
-| Concept | Description |
-|---|---|
-| **Image** | Immutable blueprint (layers) |
-| **Container** | Running instance of an image |
-| **Registry** | Image storage (DockerHub, ECR, GCR) |
-| **Layer** | Cached filesystem snapshot; shared across images |
+### Container vs VM
 
-**How it works:** Docker uses Linux **namespaces** (process, network, mount isolation) and **cgroups** (CPU, memory limits) — lighter than VMs (no guest OS).
+| | Container | Virtual Machine |
+|---|---|---|
+| Isolation | Process-level (namespaces + cgroups) | Full OS virtualization (hypervisor) |
+| Startup | Milliseconds | Minutes |
+| Size | MBs | GBs |
+| Overhead | Near-zero | Significant |
+| Kernel | Shared with host | Separate guest kernel |
+| Use case | App packaging, microservices | Full OS isolation, legacy apps |
+
+### Linux Primitives Used by Docker
+
+| Feature | What it does |
+|---|---|
+| **Namespaces** | Isolate: PID, network, mount, UTS (hostname), IPC, user |
+| **cgroups** | Limit CPU, memory, I/O, network bandwidth per container |
+| **Union FS (OverlayFS)** | Layer filesystem — each instruction creates a layer |
+| **seccomp** | Restrict syscalls (security hardening) |
+
+### Image Layers & Caching
+
+```
+Image = stack of read-only layers + writable container layer on top
+
+Layer 1: FROM eclipse-temurin:21-jre    (base OS + JRE)
+Layer 2: WORKDIR /app                   (tiny)
+Layer 3: COPY *.jar app.jar             (your JAR)
+Layer 4: ENTRYPOINT [...]               (metadata)
+
+Container: writable layer on top (deleted on container removal)
+```
+
+**Cache invalidation:** A layer is rebuilt when its instruction or any preceding layer changes. Order instructions from least-changing to most-changing.
 
 ---
 
 ## Dockerfile Best Practices
 
+### Multi-Stage Build (Java Spring Boot)
+
 ```dockerfile
-# Multi-stage build: separate build env from runtime
+# Stage 1: Build
 FROM eclipse-temurin:21-jdk AS build
 WORKDIR /app
-COPY pom.xml .
-RUN mvn dependency:go-offline -q       # cache deps layer separately
-COPY src ./src
-RUN mvn package -DskipTests
 
-FROM eclipse-temurin:21-jre            # lean runtime image
+# Copy dependency descriptors first (cache layer if pom.xml unchanged)
+COPY pom.xml .
+COPY .mvn .mvn
+COPY mvnw .
+RUN ./mvnw dependency:go-offline -q
+
+# Then copy source (this layer busts on code changes)
+COPY src ./src
+RUN ./mvnw package -DskipTests
+
+# Stage 2: Layered runtime (Spring Boot 2.3+ layered JAR)
+FROM eclipse-temurin:21-jre AS runtime
 WORKDIR /app
+
+# Create non-root user
+RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
+
+# Spring Boot layered JAR: extract layers for better caching
 COPY --from=build /app/target/*.jar app.jar
+RUN java -Djarmode=layertools -jar app.jar extract
+
+# dependencies layer (changes rarely) cached separately from app layer
+COPY --from=build /app/target/extracted/dependencies/ ./
+COPY --from=build /app/target/extracted/spring-boot-loader/ ./
+COPY --from=build /app/target/extracted/snapshot-dependencies/ ./
+COPY --from=build /app/target/extracted/application/ ./
+
+USER appuser
 EXPOSE 8080
-ENTRYPOINT ["java", "-XX:+UseContainerSupport", "-jar", "app.jar"]
+
+ENTRYPOINT ["java",
+  "-XX:+UseContainerSupport",
+  "-XX:MaxRAMPercentage=75.0",
+  "-Djava.security.egd=file:/dev/./urandom",
+  "org.springframework.boot.loader.launch.JarLauncher"]
 ```
 
-**Why `COPY pom.xml` before `COPY src`?** Docker caches each layer. If only source changes, the dependency download layer is reused — much faster builds.
+### Key Dockerfile Principles
 
-**`UseContainerSupport`** — JVM respects Docker memory/CPU limits (default since Java 10+).
+| Practice | Why |
+|---|---|
+| `UseContainerSupport` | JVM respects container CPU/memory limits (default since Java 10) |
+| `MaxRAMPercentage=75.0` | Leave 25% for OS, off-heap, GC overhead |
+| Non-root user | Security — principle of least privilege |
+| `.dockerignore` | Exclude `target/`, `.git/`, `*.md` → smaller build context, faster builds |
+| Fixed image tags | Never use `latest` in production — non-reproducible builds |
+| Minimal base image | Use JRE not JDK at runtime; consider distroless for smaller attack surface |
+
+### .dockerignore
+
+```
+target/
+.git/
+*.md
+*.log
+.env
+node_modules/
+```
+
+---
+
+## Docker Networking & Storage
+
+### Network Modes
+
+| Mode | Description | Use Case |
+|---|---|---|
+| `bridge` (default) | Private network; containers communicate by name | Most containers |
+| `host` | Container shares host network stack | High-performance, when port mapping overhead matters |
+| `none` | No networking | Batch processing, offline jobs |
+| `overlay` | Multi-host networking (Swarm/K8s) | Distributed deployments |
+
+```bash
+# Create custom bridge network (containers can reach each other by name)
+docker network create my-app-net
+docker run --network my-app-net --name postgres postgres:15
+docker run --network my-app-net --name app my-app  # can reach postgres:5432
+```
+
+### Volumes vs Bind Mounts
+
+| | Volume | Bind Mount |
+|---|---|---|
+| Managed by | Docker | Host OS |
+| Location | Docker storage dir | Any host path |
+| Portability | High | Low (path-dependent) |
+| Use case | Production persistence | Dev (live code reload) |
+
+```bash
+docker run -v my-data:/var/lib/postgresql/data postgres  # named volume
+docker run -v $(pwd)/src:/app/src my-app  # bind mount for dev
+```
 
 ---
 
@@ -53,119 +162,231 @@ ENTRYPOINT ["java", "-XX:+UseContainerSupport", "-jar", "app.jar"]
 
 ```mermaid
 flowchart TD
-    subgraph Control Plane
-        API[API Server] --- Etcd[(etcd)]
-        API --- Scheduler
-        API --- CM[Controller Manager]
+    subgraph ControlPlane["Control Plane"]
+        API[API Server\ngateway for all ops] <--> etcd[(etcd\nsource of truth)]
+        API --- Sched[Scheduler\nassigns pods to nodes]
+        API --- CM[Controller Manager\nensures desired state]
+        API --- CCM[Cloud Controller\nLB, volumes, nodes]
     end
-    subgraph Node 1
-        Kubelet1[kubelet] --- Pod1[Pod: app-1]
-        Kubelet1 --- Pod2[Pod: app-2]
+    subgraph Node1["Worker Node 1"]
+        Kub1[kubelet\nagent] --> Pod1[Pod\ncontainer+sidecar]
+        Kub1 --> Pod2[Pod]
+        KP1[kube-proxy\niptables/IPVS rules]
     end
-    subgraph Node 2
-        Kubelet2[kubelet] --- Pod3[Pod: app-3]
+    subgraph Node2["Worker Node 2"]
+        Kub2[kubelet] --> Pod3[Pod]
+        KP2[kube-proxy]
     end
-    API --- Kubelet1
-    API --- Kubelet2
+    API <--> Kub1 & Kub2
+    Users[kubectl / CI-CD] --> API
 ```
 
-- **API Server** — single entry point; validates and persists to etcd
-- **etcd** — distributed KV store; source of truth for cluster state
-- **Scheduler** — assigns Pods to Nodes based on resource availability
-- **Controller Manager** — ensures desired state (ReplicaSet maintains N replicas)
-- **kubelet** — agent on each node; ensures containers are running
+### Control Plane Components
+
+| Component | Role |
+|---|---|
+| **API Server** | Single entry point; validates, authenticates, persists to etcd |
+| **etcd** | Distributed KV store; only API server reads/writes etcd |
+| **Scheduler** | Watches unscheduled pods; assigns to node based on resources, affinity, taints |
+| **Controller Manager** | Runs controllers: ReplicaSet, Deployment, Node, Job... ensures actual = desired |
+| **Cloud Controller** | Provisions cloud LBs, persistent volumes, node lifecycle |
+
+### Worker Node Components
+
+| Component | Role |
+|---|---|
+| **kubelet** | Talks to API server; ensures containers in pods are running and healthy |
+| **kube-proxy** | Implements Service abstraction via iptables/IPVS; routes traffic to pod IPs |
+| **Container runtime** | containerd / CRI-O — pulls images, starts/stops containers |
 
 ---
 
-## Deployments & Services
+## Workloads & Services
+
+### Deployment (stateless apps)
 
 ```yaml
-# Deployment
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: order-service
+  labels:
+    app: order-service
 spec:
   replicas: 3
   selector:
     matchLabels:
       app: order-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1          # allow 1 extra pod during update
+      maxUnavailable: 0    # never go below replica count
   template:
+    metadata:
+      labels:
+        app: order-service
     spec:
       containers:
       - name: app
-        image: my-registry/order-service:1.2.0
+        image: my-registry/order-service:1.2.0  # always pin version
         ports:
         - containerPort: 8080
         resources:
-          requests: { cpu: "250m", memory: "256Mi" }
-          limits:   { cpu: "500m", memory: "512Mi" }
+          requests:             # guaranteed
+            cpu: "250m"
+            memory: "256Mi"
+          limits:               # hard cap (OOMKilled if exceeded)
+            cpu: "500m"
+            memory: "512Mi"
+        livenessProbe:
+          httpGet: { path: /actuator/health/liveness, port: 8080 }
+          initialDelaySeconds: 45
+          periodSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet: { path: /actuator/health/readiness, port: 8080 }
+          periodSeconds: 5
+          failureThreshold: 3
 ```
+
+### StatefulSet (stateful apps — databases, Kafka)
 
 ```yaml
-# Service — stable DNS + load balancing to pods
-apiVersion: v1
-kind: Service
+apiVersion: apps/v1
+kind: StatefulSet
 metadata:
-  name: order-service
+  name: postgres
 spec:
-  selector:
-    app: order-service
-  ports:
-  - port: 80
-    targetPort: 8080
-  type: ClusterIP   # internal only
+  serviceName: postgres-headless  # required: headless service
+  replicas: 3
+  template:
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      storageClassName: gp2
+      accessModes: [ReadWriteOnce]
+      resources:
+        requests:
+          storage: 20Gi
 ```
 
-**Service types:**
-- `ClusterIP` — internal cluster traffic
-- `NodePort` — exposes on each node's IP
-- `LoadBalancer` — creates cloud LB (AWS ELB)
-- `Ingress` — HTTP routing, TLS termination (preferred for production)
+**StatefulSet guarantees:**
+- Stable pod names: `postgres-0`, `postgres-1`, `postgres-2`
+- Stable DNS: `postgres-0.postgres-headless.namespace.svc.cluster.local`
+- Ordered start/stop (postgres-0 starts first, stops last)
+- Persistent volumes survive pod restart
+
+### Other Workload Types
+
+| Kind | Use Case |
+|---|---|
+| **Job** | Run once to completion (batch, migration) |
+| **CronJob** | Scheduled recurring jobs |
+| **DaemonSet** | One pod per node (log shippers, monitoring agents) |
+| **Deployment** | Stateless apps |
+| **StatefulSet** | Stateful apps with stable identity |
+
+### Service Types
+
+```yaml
+# ClusterIP — internal traffic only (default)
+spec:
+  type: ClusterIP
+  selector: { app: order-service }
+  ports: [{ port: 80, targetPort: 8080 }]
+
+# NodePort — exposes on each node's IP:port (dev/testing)
+spec:
+  type: NodePort
+  ports: [{ port: 80, targetPort: 8080, nodePort: 30080 }]
+
+# LoadBalancer — provisions cloud LB (production external access)
+spec:
+  type: LoadBalancer
+  ports: [{ port: 80, targetPort: 8080 }]
+```
 
 ---
 
 ## Configuration & Secrets
 
 ```yaml
-# ConfigMap — non-sensitive config
+# ConfigMap — non-sensitive configuration
 apiVersion: v1
 kind: ConfigMap
+metadata:
+  name: app-config
 data:
   SPRING_PROFILES_ACTIVE: "prod"
   DB_HOST: "postgres-service"
-
-# Secret — base64 encoded (not encrypted by default; use Vault or AWS Secrets Manager)
+  LOG_LEVEL: "INFO"
+---
+# Secret — base64 encoded at rest (NOT encrypted by default)
+# Use Vault, AWS Secrets Manager, or Sealed Secrets for real encryption
 apiVersion: v1
 kind: Secret
+metadata:
+  name: app-secrets
+type: Opaque
 data:
-  DB_PASSWORD: cGFzc3dvcmQ=   # base64
+  DB_PASSWORD: cGFzc3dvcmQ=    # echo -n "password" | base64
+  JWT_SECRET: c2VjcmV0a2V5...
 ```
 
 ```yaml
-# Reference in pod
-envFrom:
-- configMapRef:
-    name: app-config
-- secretRef:
-    name: app-secrets
+# Reference in pod spec
+spec:
+  containers:
+  - name: app
+    envFrom:
+    - configMapRef:
+        name: app-config
+    - secretRef:
+        name: app-secrets
+    # Or as files mounted in volume
+    volumeMounts:
+    - name: secrets
+      mountPath: /etc/secrets
+      readOnly: true
+  volumes:
+  - name: secrets
+    secret:
+      secretName: app-secrets
 ```
+
+**Security best practices:**
+- Never store secrets in ConfigMaps
+- Use external secret management: HashiCorp Vault, AWS Secrets Manager + External Secrets Operator
+- Enable etcd encryption at rest
+- Limit Secret access via RBAC (least privilege)
 
 ---
 
-## Scaling & Health
+## Scaling, Health & Scheduling
 
 ### Horizontal Pod Autoscaler (HPA)
 
 ```yaml
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
+metadata:
+  name: order-service-hpa
 spec:
   scaleTargetRef:
+    apiVersion: apps/v1
     kind: Deployment
     name: order-service
   minReplicas: 2
-  maxReplicas: 10
+  maxReplicas: 20
   metrics:
   - type: Resource
     resource:
@@ -173,30 +394,238 @@ spec:
       target:
         type: Utilization
         averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  # Custom metric (e.g., Kafka consumer lag via KEDA)
+  - type: External
+    external:
+      metric:
+        name: kafka_consumer_lag
+      target:
+        type: AverageValue
+        averageValue: "1000"
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300  # wait 5min before scaling down
 ```
 
 ### Probes
 
+| Probe | Failure Action | Use Case |
+|---|---|---|
+| **Liveness** | Restart container | App is deadlocked or in bad state |
+| **Readiness** | Remove from Service endpoints | App is starting up or temporarily overloaded |
+| **Startup** | Allow slow startup before liveness kicks in | Slow-starting apps (migrations, etc.) |
+
 ```yaml
-livenessProbe:   # Is the container alive? (restart if fails)
-  httpGet:
-    path: /actuator/health/liveness
-    port: 8080
-  initialDelaySeconds: 30
+startupProbe:
+  httpGet: { path: /actuator/health, port: 8080 }
+  failureThreshold: 30   # allow up to 30 * 10s = 5min to start
   periodSeconds: 10
 
-readinessProbe:  # Is the container ready to receive traffic? (remove from LB if fails)
-  httpGet:
-    path: /actuator/health/readiness
-    port: 8080
+livenessProbe:
+  httpGet: { path: /actuator/health/liveness, port: 8080 }
+  initialDelaySeconds: 0  # startupProbe guards this
+  periodSeconds: 10
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet: { path: /actuator/health/readiness, port: 8080 }
   periodSeconds: 5
+  failureThreshold: 3
 ```
 
-**Rolling Update** — default strategy; gradually replaces old pods. Zero-downtime if readiness probes are configured correctly.
+### Resource Requests vs Limits
+
+```
+Requests: guaranteed resources — used for scheduling decisions
+Limits: hard cap — container killed/throttled when exceeded
+
+OOMKilled: container exceeded memory limit
+CPU throttle: container can't burst above CPU limit (not killed, just throttled)
+
+Best practice:
+  requests = average expected usage
+  limits = 2-3x requests (allow bursting but cap runaway processes)
+```
+
+### Pod Scheduling Controls
 
 ```yaml
-strategy:
-  rollingUpdate:
-    maxSurge: 1         # extra pods during update
-    maxUnavailable: 0   # never take pods below replicas count
+# Node affinity — prefer or require specific nodes
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: node-type
+          operator: In
+          values: [high-memory]
+
+# Pod anti-affinity — spread across nodes for HA
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      podAffinityTerm:
+        labelSelector:
+          matchLabels: { app: order-service }
+        topologyKey: kubernetes.io/hostname  # different nodes
+
+# Taints & Tolerations — reserve nodes for specific workloads
+# Taint node: kubectl taint nodes node1 dedicated=gpu:NoSchedule
+tolerations:
+- key: dedicated
+  value: gpu
+  effect: NoSchedule
+```
+
+---
+
+## Kubernetes Networking & Ingress
+
+### Service DNS
+
+Every Service gets a DNS entry: `<service>.<namespace>.svc.cluster.local`
+
+```
+order-service.default.svc.cluster.local → ClusterIP → Pod IPs
+```
+
+Pod-to-pod communication uses this DNS — no hardcoded IPs.
+
+### Ingress
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: api-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts: [api.example.com]
+    secretName: api-tls
+  rules:
+  - host: api.example.com
+    http:
+      paths:
+      - path: /orders
+        pathType: Prefix
+        backend:
+          service:
+            name: order-service
+            port: { number: 80 }
+      - path: /payments
+        pathType: Prefix
+        backend:
+          service:
+            name: payment-service
+            port: { number: 80 }
+```
+
+### NetworkPolicy (micro-segmentation)
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: order-service-netpol
+spec:
+  podSelector:
+    matchLabels: { app: order-service }
+  policyTypes: [Ingress, Egress]
+  ingress:
+  - from:
+    - podSelector: { matchLabels: { app: api-gateway } }
+    ports: [{ port: 8080 }]
+  egress:
+  - to:
+    - podSelector: { matchLabels: { app: postgres } }
+    ports: [{ port: 5432 }]
+```
+
+---
+
+## Helm & Service Mesh
+
+### Helm
+
+Kubernetes package manager — templates + values files:
+
+```bash
+helm install order-service ./helm/order-service \
+  --set image.tag=1.2.0 \
+  --set replicas=3 \
+  -f values-prod.yaml
+
+helm upgrade order-service ./helm/order-service --set image.tag=1.3.0
+helm rollback order-service 1  # rollback to revision 1
+```
+
+**Chart structure:**
+```
+my-chart/
+  Chart.yaml         # metadata
+  values.yaml        # default values
+  templates/
+    deployment.yaml  # uses {{ .Values.image.tag }}
+    service.yaml
+    hpa.yaml
+    ingress.yaml
+```
+
+### Service Mesh (Istio / Linkerd)
+
+Sidecar proxy (Envoy) injected into each pod — handles:
+
+| Feature | Benefit |
+|---|---|
+| mTLS | Automatic encryption between services |
+| Traffic management | Canary deployments, traffic splitting, retries |
+| Observability | Distributed tracing, metrics, dashboards (Kiali) |
+| Circuit breaking | At the network level, no app code changes |
+| Rate limiting | Per-service or per-endpoint |
+
+```yaml
+# Istio: traffic splitting (canary — 90% v1, 10% v2)
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: order-service
+spec:
+  hosts: [order-service]
+  http:
+  - route:
+    - destination: { host: order-service, subset: v1 }
+      weight: 90
+    - destination: { host: order-service, subset: v2 }
+      weight: 10
+```
+
+### Kubernetes Deployment Strategies
+
+| Strategy | Zero Downtime | Risk | Use Case |
+|---|---|---|---|
+| **Rolling Update** | ✅ | Low | Default; works for backward-compatible changes |
+| **Blue/Green** | ✅ | Medium | Switch all traffic at once; instant rollback |
+| **Canary** | ✅ | Low | Gradual traffic shift; test with real users |
+| **Recreate** | ❌ | High | Simple apps; acceptable downtime |
+
+```mermaid
+flowchart LR
+    subgraph BlueGreen["Blue/Green"]
+        LB1[Load Balancer] -->|switch| Blue[Blue\nv1 active]
+        LB1 -.->|after switch| Green[Green\nv2 standby]
+    end
+    subgraph Canary["Canary (5% → 20% → 100%)"]
+        LB2[Load Balancer] -->|95%| Stable[Stable v1]
+        LB2 -->|5%| Canary2[Canary v2]
+    end
 ```
